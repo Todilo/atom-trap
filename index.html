@@ -13,12 +13,27 @@
     <!-- The whole game lives in #stage, which is drawn turned 90° when the screen is portrait (ADR-0013). -->
     <div id="stage">
       <header id="hud" aria-live="off">
-        <span>Level <b id="hud-level">1</b></span>
-        <span>Lives <b id="hud-lives">0</b></span>
-        <span>Cleared <b id="hud-coverage">0%</b></span>
-        <span>Score <b id="hud-score">0</b><i id="hud-unscored" hidden> unscored</i></span>
-        <span>Time <b id="hud-time">0</b></span>
-        <button type="button" id="hud-pause" aria-label="Pause">❚❚</button>
+        <div class="chip">
+          <span class="mode-tag" id="hud-mode">Classic</span>
+          <span class="lbl">Level</span><b class="big" id="hud-level">1</b>
+        </div>
+        <div class="chip">
+          <span class="lbl">Lives</span><span class="dots" id="hud-dots" aria-hidden="true"></span><b id="hud-lives">0</b>
+        </div>
+        <div class="chip grow col">
+          <div class="line"><span class="lbl">Cleared</span><span><b id="hud-coverage">0%</b> <span class="dim" id="hud-target">/ 75%</span></span></div>
+          <div class="bar"><div class="fill" id="hud-coverage-bar"></div><div class="mark" id="hud-target-mark"></div></div>
+        </div>
+        <div class="chip col end">
+          <span class="lbl">Score<i id="hud-unscored" hidden> · unscored</i></span><b class="score" id="hud-score">0</b>
+        </div>
+        <div class="chip col time">
+          <div class="line"><span class="lbl">Time</span><b id="hud-time">0</b></div>
+          <div class="bar thin"><div class="fill" id="hud-time-bar"></div></div>
+        </div>
+        <button type="button" id="hud-pause" aria-label="Pause">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
+        </button>
       </header>
       <main id="app"></main>
       <div id="hint" hidden>

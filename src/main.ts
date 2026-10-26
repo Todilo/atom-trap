@@ -1,15 +1,27 @@
+import '@fontsource/chakra-petch/latin-500.css';
+import '@fontsource/chakra-petch/latin-600.css';
+import '@fontsource/chakra-petch/latin-700.css';
 import './style.css';
 import { registerSW } from 'virtual:pwa-register';
 import { PointerInput } from './game/input';
 import { cellAt, layoutBoard } from './game/layout';
 import { Progress, Run, type RunKind } from './game/run';
 import { NeonRenderer } from './render/neonRenderer';
-import { cssVariables, nextTheme, themeById, type Theme } from './render/themes';
+import { modeById, type GameModeId } from './game/modes';
+import { cssVariables, themeById, type Theme } from './render/themes';
 import { AudioEngine, type AudioSettings } from './shell/audio';
 import { Haptics } from './shell/haptics';
-import { gameOverScreen, highScoresScreen, levelClearedScreen, pauseScreen, titleScreen, type Prefs } from './shell/screens';
+import {
+  gameOverScreen,
+  highScoresScreen,
+  levelClearedScreen,
+  pauseScreen,
+  settingsScreen,
+  titleScreen,
+  type Prefs,
+} from './shell/screens';
 import { localStore } from './shell/storage';
-import type { ClassicSpeed } from './sim/ruleset';
+import { classicAtomCount, type ClassicSpeed } from './sim/ruleset';
 import type { Atom, Simulation } from './sim/simulation';
 
 // The complete Classic game (ADR-0010) with the neon look (ADR-0004) and synth audio (ADR-0008).
@@ -21,12 +33,18 @@ orientation.lock?.('landscape').catch(() => {});
 
 const $ = (id: string) => document.getElementById(id)!;
 const hud = {
+  mode: $('hud-mode'),
   level: $('hud-level'),
   lives: $('hud-lives'),
+  dots: $('hud-dots'),
   coverage: $('hud-coverage'),
+  coverageBar: $('hud-coverage-bar'),
+  target: $('hud-target'),
+  targetMark: $('hud-target-mark'),
   score: $('hud-score'),
   unscored: $('hud-unscored'),
   time: $('hud-time'),
+  timeBar: $('hud-time-bar'),
   pause: $('hud-pause'),
 };
 const screenEl = $('screen');
@@ -45,10 +63,15 @@ function applyTheme(t: Theme): void {
 applyTheme(theme);
 const audio = new AudioEngine(localStore.get<AudioSettings>('audio', { music: true, sfx: true }));
 const saveAudio = () => localStore.set('audio', audio.settings);
-const prefsStore = localStore.get<{ haptics: boolean; speed: ClassicSpeed }>('prefs', { haptics: true, speed: 'fast' });
+const prefsStore = {
+  haptics: true,
+  speed: 'fast' as ClassicSpeed,
+  mode: 'classic' as GameModeId,
+  ...localStore.get<{ haptics?: boolean; speed?: ClassicSpeed; mode?: GameModeId }>('prefs', {}),
+};
 const haptics = new Haptics(prefsStore.haptics);
-const savePrefs = () => localStore.set('prefs', { haptics: haptics.enabled, speed: prefsStore.speed });
-const prefs = (): Prefs => ({ ...audio.settings, haptics: haptics.enabled, speed: prefsStore.speed, theme: theme.name });
+const savePrefs = () => localStore.set('prefs', { haptics: haptics.enabled, speed: prefsStore.speed, mode: prefsStore.mode });
+const prefs = (): Prefs => ({ ...audio.settings, haptics: haptics.enabled, speed: prefsStore.speed, theme: theme.id, mode: prefsStore.mode });
 
 // Audio unlock: browsers only allow sound after a user gesture, so start it on the first tap or click.
 window.addEventListener('pointerdown', () => audio.unlock(), { capture: true });
@@ -85,15 +108,57 @@ function snapshot(s: Simulation): Atom[] {
   return s.atoms.map((a) => ({ ...a }));
 }
 
-function showScreen(html: string | null): void {
+/** Redraws the screen on show, for switches and tabs that change it in place. */
+let redraw: (() => void) | null = null;
+
+/** A page covers the whole stage; a dialog sits over the dimmed board. */
+function showScreen(html: string | null, kind: 'page' | 'dialog' = 'dialog', draw: (() => void) | null = null): void {
+  // Redrawing the same screen (a switch flipped) keeps its scroll position.
+  const scroll = draw && draw === redraw ? screenEl.scrollTop : 0;
+  redraw = draw;
   screenEl.hidden = html === null;
+  screenEl.className = kind;
   screenEl.innerHTML = html ?? '';
+  screenEl.scrollTop = scroll;
 }
 
 function showMenu(): void {
   mode = 'menu';
   setHint(false);
-  showScreen(titleScreen(progress.highestLevel, prefs(), haptics.supported));
+  const draw = () => showScreen(titleScreen(progress.highestLevel, prefs(), progress.highScores[0]?.score ?? null), 'page', draw);
+  draw();
+}
+
+function showScores(tab: GameModeId): void {
+  const draw = () => showScreen(highScoresScreen(progress.highScores, tab, progress.highestLevel), 'page', draw);
+  draw();
+}
+
+function showSettings(): void {
+  const from = mode === 'paused' ? 'pause' : 'menu';
+  const draw = () => showScreen(settingsScreen(prefs(), haptics.supported, from), 'page', draw);
+  draw();
+}
+
+function showPause(): void {
+  const s = run!.sim;
+  const draw = () =>
+    showScreen(
+      pauseScreen(
+        {
+          mode: modeById(prefsStore.mode).name,
+          level: run!.level,
+          coverage: Math.floor(s.coverage * 100),
+          score: run!.score,
+          lives: s.lives,
+          time: s.timeLeft,
+        },
+        prefs(),
+      ),
+      'dialog',
+      draw,
+    );
+  draw();
 }
 
 function startRun(kind: RunKind): void {
@@ -113,7 +178,7 @@ function beginLevel(): void {
 function pause(): void {
   if (mode !== 'playing') return;
   mode = 'paused';
-  showScreen(pauseScreen(prefs(), haptics.supported));
+  showPause();
 }
 
 function resume(): void {
@@ -129,13 +194,36 @@ screenEl.addEventListener('click', (e) => {
     if (mode === 'cleared') nextLevel();
     return;
   }
-  switch (action) {
+  const [name, arg] = action.split(':');
+  switch (name) {
     case 'play':
       return startRun('scored');
     case 'continue':
       return startRun('continue');
+    case 'next':
+      return nextLevel();
+    case 'mode':
+      prefsStore.mode = modeById(arg).id;
+      savePrefs();
+      return redrawSettings();
+    case 'speed':
+      prefsStore.speed = arg === 'slow' ? 'slow' : 'fast';
+      savePrefs();
+      return redrawSettings();
     case 'scores':
-      return showScreen(highScoresScreen(progress.highScores));
+      return showScores(arg ? modeById(arg).id : 'classic');
+    case 'settings':
+      return showSettings();
+    case 'pause-menu':
+      return showPause();
+    case 'theme':
+      applyTheme(themeById(arg));
+      localStore.set('theme', theme.id);
+      return redrawSettings();
+    case 'show-hint':
+      localStore.set('hintSeen', false);
+      (e.target as HTMLElement).closest('button')!.textContent = 'The hint shows on your next game';
+      return;
     case 'menu':
       return showMenu();
     case 'resume':
@@ -153,14 +241,6 @@ screenEl.addEventListener('click', (e) => {
       savePrefs();
       haptics.event({ type: 'wall-completed', slot: 'a' });
       return redrawSettings();
-    case 'toggle-theme':
-      applyTheme(nextTheme(theme.id));
-      localStore.set('theme', theme.id);
-      return redrawSettings();
-    case 'toggle-speed':
-      prefsStore.speed = prefsStore.speed === 'fast' ? 'slow' : 'fast';
-      savePrefs();
-      return redrawSettings();
     case 'save-name':
       return saveName();
     case 'quit':
@@ -170,9 +250,9 @@ screenEl.addEventListener('click', (e) => {
   }
 });
 
-/** Redraws the screen that holds the settings switches after one changes. */
+/** Redraws the current screen after a switch or selection on it changes. */
 function redrawSettings(): void {
-  showScreen(mode === 'paused' ? pauseScreen(prefs(), haptics.supported) : titleScreen(progress.highestLevel, prefs(), haptics.supported));
+  redraw?.();
 }
 
 function showGameOver(): void {
@@ -244,7 +324,19 @@ function handleStepEvents(s: Simulation): void {
     haptics.event(e);
     if (e.type === 'level-cleared') {
       mode = 'cleared';
-      showScreen(levelClearedScreen(run!.level, e.bonus, run!.score, run!.kind === 'scored'));
+      showScreen(
+        levelClearedScreen({
+          mode: modeById(prefsStore.mode).name,
+          level: run!.level,
+          coverage: Math.floor(s.coverage * 100),
+          livesLeft: s.lives,
+          bonus: e.bonus,
+          levelScore: s.score,
+          total: run!.score,
+          scored: run!.kind === 'scored',
+          nextAtoms: classicAtomCount(run!.level + 1),
+        }),
+      );
     } else if (e.type === 'game-over') {
       mode = 'over';
       gameOver = { reason: e.reason, rank: run!.finish(), savedName: null };
@@ -269,14 +361,36 @@ renderer.app.ticker.add((ticker) => {
   audio.setGrowing(growing);
 });
 
+/** Lives show as dots up to this many; above it, as a number. */
+const MAX_LIFE_DOTS = 8;
+let shownLives = '';
+
 function updateHud(): void {
   const s = sim();
+  hud.mode.textContent = modeById(prefsStore.mode).name;
   hud.level.textContent = String(run?.level ?? progress.highestLevel);
-  hud.lives.textContent = String(s?.lives ?? 0);
-  hud.coverage.textContent = `${Math.floor((s?.coverage ?? 0) * 100)}%`;
+  const lives = s?.lives ?? 0;
+  const maxLives = s?.rules.lives ?? 0;
+  const livesKey = `${lives}/${maxLives}`;
+  if (livesKey !== shownLives) {
+    shownLives = livesKey;
+    const dots = maxLives > 0 && maxLives <= MAX_LIFE_DOTS;
+    hud.dots.innerHTML = dots ? Array.from({ length: maxLives }, (_, i) => `<i${i < lives ? ' class="on"' : ''}></i>`).join('') : '';
+    hud.lives.textContent = String(lives);
+    hud.lives.classList.toggle('sr-only', dots);
+  }
+  const coverage = Math.floor((s?.coverage ?? 0) * 100);
+  const target = Math.round((s?.rules.targetCoverage ?? 0.75) * 100);
+  hud.coverage.textContent = `${coverage}%`;
+  hud.coverageBar.style.width = `${coverage}%`;
+  hud.target.textContent = `/ ${target}%`;
+  hud.targetMark.style.left = `${target}%`;
   hud.score.textContent = Math.round(run?.score ?? 0).toLocaleString('en-US');
   hud.unscored.hidden = run?.kind !== 'continue';
-  hud.time.textContent = String(s?.timeLeft ?? 0);
+  const time = s?.timeLeft ?? 0;
+  hud.time.textContent = String(time);
+  hud.timeBar.style.width = `${s ? (100 * time) / s.rules.timeLimit : 0}%`;
+  hud.timeBar.classList.toggle('low', !!s && time <= s.rules.timeWarningAt);
   hud.pause.hidden = mode !== 'playing' && mode !== 'paused';
 }
 

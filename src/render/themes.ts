@@ -123,11 +123,16 @@ export function cssVariables(t: Theme): Record<string, string> {
   const bg = hex(t.background);
   return {
     '--bg': bg,
+    '--surface': hex(t.board),
+    '--grid': hex(t.grid),
     '--text': t.ui.text,
+    '--text-dim': rgba(t.ui.text, 0.72),
+    '--line': rgba(t.ui.accent, 0.22),
     '--accent': t.ui.accent,
     '--accent-soft': rgba(t.ui.accent, 0.4),
     '--accent-faint': rgba(t.ui.accent, 0.08),
     '--highlight': t.ui.highlight,
+    '--highlight-soft': rgba(t.ui.highlight, 0.35),
     '--overlay': rgba(bg, 0.82),
   };
 }
