@@ -213,7 +213,6 @@ export interface ClearedInfo {
   levelScore: number;
   total: number;
   scored: boolean;
-  nextAtoms: number;
 }
 
 export function levelClearedScreen(c: ClearedInfo): string {
@@ -233,7 +232,6 @@ export function levelClearedScreen(c: ClearedInfo): string {
         ${row('Time bonus', c.bonus.time)}
         <tr class="total"><td>${c.scored ? 'Run total' : 'Run total (unscored)'}</td><td>${fmt(c.total)}</td></tr>
       </table>
-      <p class="note">Next: ${c.nextAtoms} atoms, ${c.nextAtoms} lives.</p>
       <div class="row">${button('next', `Next level${icon.next}`, 'primary big grow')}</div>
     </div>`;
 }

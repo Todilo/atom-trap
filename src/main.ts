@@ -23,7 +23,7 @@ import {
   type Prefs,
 } from './shell/screens';
 import { localStore } from './shell/storage';
-import { classicAtomCount, type ClassicSpeed } from './sim/ruleset';
+import type { ClassicSpeed } from './sim/ruleset';
 import type { Atom, Simulation } from './sim/simulation';
 
 // The complete Classic game (ADR-0010) with the neon look (ADR-0004) and synth audio (ADR-0008).
@@ -375,7 +375,6 @@ function handleStepEvents(s: Simulation): void {
           levelScore: s.score,
           total: run!.score,
           scored: run!.kind === 'scored',
-          nextAtoms: classicAtomCount(run!.level + 1),
         }),
       );
     } else if (e.type === 'game-over') {
