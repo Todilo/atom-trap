@@ -11,7 +11,7 @@
 - **Mouse:** left-click builds a wall, right-click switches between vertical and horizontal.
 - **Careful:** a wall is fragile while it grows. An atom that touches it breaks it and costs a life. Bigger clears earn bonus points for coverage above 80% and 90%, lives left and time left.
 - **Continue** starts at your highest level, but the score doesn't count for the high-score table.
-- **Speed: Slow** (title screen) runs at half speed for half points, like the original's Slow option. Music, sound and vibration have their own switches.
+- **Speed: Slow** (title screen) runs at half speed for half points, like the original's Slow option. Music, sound and vibration have their own switches, and **Theme** cycles through five colour schemes (Neon, Synthwave, Toxic, Ember, Ice).
 
 ## Develop
 

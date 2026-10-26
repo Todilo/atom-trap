@@ -4,6 +4,7 @@ import { PointerInput } from './game/input';
 import { cellAt, layoutBoard } from './game/layout';
 import { Progress, Run, type RunKind } from './game/run';
 import { NeonRenderer } from './render/neonRenderer';
+import { cssVariables, nextTheme, themeById, type Theme } from './render/themes';
 import { AudioEngine, type AudioSettings } from './shell/audio';
 import { Haptics } from './shell/haptics';
 import { gameOverScreen, highScoresScreen, levelClearedScreen, pauseScreen, titleScreen, type Prefs } from './shell/screens';
@@ -30,14 +31,24 @@ const hud = {
 };
 const screenEl = $('screen');
 const host = $('app');
-const renderer = await NeonRenderer.create(host);
 const progress = new Progress(localStore);
+let theme = themeById(localStore.get('theme', 'neon'));
+const renderer = await NeonRenderer.create(host, theme);
+
+/** Applies a colour theme to the board (renderer) and to the menus and HUD (CSS variables). */
+function applyTheme(t: Theme): void {
+  theme = t;
+  renderer.setTheme(t);
+  for (const [name, value] of Object.entries(cssVariables(t))) document.documentElement.style.setProperty(name, value);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', cssVariables(t)['--bg']);
+}
+applyTheme(theme);
 const audio = new AudioEngine(localStore.get<AudioSettings>('audio', { music: true, sfx: true }));
 const saveAudio = () => localStore.set('audio', audio.settings);
 const prefsStore = localStore.get<{ haptics: boolean; speed: ClassicSpeed }>('prefs', { haptics: true, speed: 'fast' });
 const haptics = new Haptics(prefsStore.haptics);
 const savePrefs = () => localStore.set('prefs', { haptics: haptics.enabled, speed: prefsStore.speed });
-const prefs = (): Prefs => ({ ...audio.settings, haptics: haptics.enabled, speed: prefsStore.speed });
+const prefs = (): Prefs => ({ ...audio.settings, haptics: haptics.enabled, speed: prefsStore.speed, theme: theme.name });
 
 // Audio unlock: browsers only allow sound after a user gesture, so start it on the first tap or click.
 window.addEventListener('pointerdown', () => audio.unlock(), { capture: true });
@@ -141,6 +152,10 @@ screenEl.addEventListener('click', (e) => {
       haptics.enabled = !haptics.enabled;
       savePrefs();
       haptics.event({ type: 'wall-completed', slot: 'a' });
+      return redrawSettings();
+    case 'toggle-theme':
+      applyTheme(nextTheme(theme.id));
+      localStore.set('theme', theme.id);
       return redrawSettings();
     case 'toggle-speed':
       prefsStore.speed = prefsStore.speed === 'fast' ? 'slow' : 'fast';
@@ -266,6 +281,6 @@ function updateHud(): void {
 }
 
 // Dev-only hook for inspecting the running game from the browser console.
-if (import.meta.env.DEV) Object.defineProperty(window, 'atomTrap', { get: () => ({ run, mode, layout, progress, renderer, audio, haptics }) });
+if (import.meta.env.DEV) Object.defineProperty(window, 'atomTrap', { get: () => ({ run, mode, layout, progress, renderer, audio, haptics, applyTheme }) });
 
 showMenu();

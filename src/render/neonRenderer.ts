@@ -1,23 +1,13 @@
 import { Application, Container, Graphics, Sprite, Texture } from 'pixi.js';
 import type { BoardLayout } from '../game/layout';
+import type { Theme } from './themes';
 import { CELL_GROWING_A, CELL_GROWING_B, CELL_OPEN, CELL_REMOVED, type Atom, type Simulation } from '../sim/simulation';
 
 /**
  * The neon look (ADR-0004). Glow is faked cheaply for mobile GPUs: additive blending, layered strokes
  * and one soft radial texture, with no blur filters. It reads simulation state and never changes it
- * (ADR-0005). Effects come from comparing the grid between frames.
+ * (ADR-0005). Effects come from comparing the grid between frames. Colours come from the active theme.
  */
-const C = {
-  background: 0x05060f,
-  board: 0x080b1d,
-  grid: 0x121a38,
-  cyan: 0x3ee8ff,
-  hot: 0xe9fdff,
-  removedA: 0x0e1c3c,
-  removedB: 0x0c1934,
-  magenta: 0xff40c8,
-  red: 0xff2a4d,
-};
 
 const TRAIL_LENGTH = 7;
 /** Trail points fade out over this time, so an atom that stops (or is stuck) loses its trail. */
@@ -48,18 +38,23 @@ function glowTexture(size = 64): Texture {
   return Texture.from(canvas);
 }
 
-/** The atom's body: a solid magenta orb with a hot white centre and a thin soft rim. */
-function orbTexture(size = 64): Texture {
+/** The atom's body: a solid orb in the theme's atom colour, with a hot white centre and a thin soft rim. */
+function orbTexture(theme: Theme, size = 64): Texture {
+  const [highlight, body] = theme.atomBody;
+  const fade = (css: string, a: number) => {
+    const n = parseInt(css.slice(1), 16);
+    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+  };
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext('2d')!;
   const r = size / 2;
   const g = ctx.createRadialGradient(r * 0.8, r * 0.8, 0, r, r, r);
   g.addColorStop(0, 'rgba(255,255,255,1)');
-  g.addColorStop(0.3, 'rgba(255,170,235,1)');
-  g.addColorStop(0.78, 'rgba(255,64,200,1)');
-  g.addColorStop(0.87, 'rgba(255,64,200,0.5)');
-  g.addColorStop(1, 'rgba(255,64,200,0)');
+  g.addColorStop(0.3, fade(highlight, 1));
+  g.addColorStop(0.78, fade(body, 1));
+  g.addColorStop(0.87, fade(body, 0.5));
+  g.addColorStop(1, fade(body, 0));
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, size, size);
   return Texture.from(canvas);
@@ -75,7 +70,9 @@ export class NeonRenderer {
   private readonly fxLayer = new Container();
   private readonly flash = new Graphics();
   private readonly glow = glowTexture();
-  private readonly orb = orbTexture();
+  private orb: Texture;
+  private cols = 28;
+  private rows = 20;
 
   private layout: BoardLayout | null = null;
   private sim: Simulation | null = null;
@@ -96,7 +93,11 @@ export class NeonRenderer {
   private particles: Particle[] = [];
   private spritePool: Sprite[] = [];
 
-  private constructor(readonly app: Application) {
+  private constructor(
+    readonly app: Application,
+    private theme: Theme,
+  ) {
+    this.orb = orbTexture(theme);
     this.edges.blendMode = 'add';
     this.walls.blendMode = 'add';
     this.trailLayer.blendMode = 'add';
@@ -104,34 +105,50 @@ export class NeonRenderer {
     this.fxLayer.blendMode = 'add';
     app.stage.addChild(this.bg, this.removed, this.edges, this.walls, this.trailLayer, this.atomLayer, this.fxLayer, this.flash);
     for (let i = 0; i < 2; i++) {
-      const tip = this.makeSprite(C.hot);
+      const tip = this.makeSprite(theme.hot);
       tip.visible = false;
       this.tipSprites.push(tip);
       this.fxLayer.addChild(tip);
     }
   }
 
-  static async create(host: HTMLElement): Promise<NeonRenderer> {
+  static async create(host: HTMLElement, theme: Theme): Promise<NeonRenderer> {
     const app = new Application();
     await app.init({
       resizeTo: host,
       // Input is handled by src/game/input.ts. Pixi's own pointer handling would only reset the cursor.
       eventFeatures: { move: false, globalMove: false, click: false, wheel: false },
-      background: C.background,
+      background: theme.background,
       antialias: true,
       resolution: Math.min(window.devicePixelRatio || 1, 2),
       autoDensity: true,
     });
     host.appendChild(app.canvas);
-    return new NeonRenderer(app);
+    return new NeonRenderer(app, theme);
   }
 
   get canvas(): HTMLCanvasElement {
     return this.app.canvas;
   }
 
+  /** Switches colours live: background, board, walls, atoms and effects. */
+  setTheme(theme: Theme): void {
+    this.theme = theme;
+    this.app.renderer.background.color = theme.background;
+    const old = this.orb;
+    this.orb = orbTexture(theme);
+    for (const core of this.coreSprites) core.texture = this.orb;
+    old.destroy(true);
+    for (const s of [...this.atomSprites, ...this.trailSprites.flat()]) s.tint = theme.atom;
+    for (const tip of this.tipSprites) tip.tint = theme.hot;
+    if (this.layout) this.setLayout(this.layout, this.cols, this.rows);
+  }
+
   setLayout(layout: BoardLayout, cols: number, rows: number): void {
     this.layout = layout;
+    this.cols = cols;
+    this.rows = rows;
+    const C = this.theme;
     this.edgesDirty = true;
     for (const t of this.trails) t.length = 0;
     this.trailLast.fill(null);
@@ -140,7 +157,7 @@ export class NeonRenderer {
     for (let x = 1; x < cols; x++) g.moveTo(layout.x + x * layout.cellW, layout.y).lineTo(layout.x + x * layout.cellW, layout.y + layout.height);
     for (let y = 1; y < rows; y++) g.moveTo(layout.x, layout.y + y * layout.cellH).lineTo(layout.x + layout.width, layout.y + y * layout.cellH);
     g.stroke({ width: 1, color: C.grid });
-    this.flash.clear().rect(0, 0, 4096, 4096).fill(C.red);
+    this.flash.clear().rect(0, 0, 4096, 4096).fill(C.flash);
     this.flash.alpha = 0;
   }
 
@@ -192,13 +209,13 @@ export class NeonRenderer {
     for (let i = 0; i < sim.atoms.length; i++) {
       const trail: Sprite[] = [];
       for (let t = 0; t < TRAIL_LENGTH; t++) {
-        const s = this.makeSprite(C.magenta);
+        const s = this.makeSprite(this.theme.atom);
         trail.push(s);
         this.trailLayer.addChild(s);
       }
       this.trailSprites.push(trail);
       this.trails.push([]);
-      const glow = this.makeSprite(C.magenta);
+      const glow = this.makeSprite(this.theme.atom);
       const core = this.makeSprite(0xffffff);
       core.texture = this.orb;
       core.blendMode = 'normal';
@@ -221,7 +238,7 @@ export class NeonRenderer {
       if (cur === prev) continue;
       this.edgesDirty = true;
       const wasGrowing = prev === CELL_GROWING_A || prev === CELL_GROWING_B;
-      if (wasGrowing && cur === CELL_OPEN) this.burst(x, y, C.hot, 4, 1);
+      if (wasGrowing && cur === CELL_OPEN) this.burst(x, y, this.theme.hot, 4, 1);
       if (cur === CELL_REMOVED) {
         fresh.push(i);
         if (wasGrowing) seeds.push(i);
@@ -258,8 +275,8 @@ export class NeonRenderer {
         if (this.removedAt[i] < 0 || t < 0 || sim.cellAt(x, y) !== CELL_REMOVED) continue;
         const px = l.x + x * l.cellW;
         const py = l.y + y * l.cellH;
-        g.rect(px, py, l.cellW + 0.5, l.cellH + 0.5).fill((x + y) % 2 ? C.removedA : C.removedB);
-        if (t < FILL_FLASH_MS) g.rect(px, py, l.cellW + 0.5, l.cellH + 0.5).fill({ color: C.cyan, alpha: 0.55 * (1 - t / FILL_FLASH_MS) });
+        g.rect(px, py, l.cellW + 0.5, l.cellH + 0.5).fill((x + y) % 2 ? this.theme.removed[0] : this.theme.removed[1]);
+        if (t < FILL_FLASH_MS) g.rect(px, py, l.cellW + 0.5, l.cellH + 0.5).fill({ color: this.theme.wall, alpha: 0.55 * (1 - t / FILL_FLASH_MS) });
       }
     }
   }
@@ -301,9 +318,9 @@ export class NeonRenderer {
     };
     const unit = Math.min(l.cellW, l.cellH);
     for (const [width, alpha, color] of [
-      [unit * 0.9, 0.08, C.cyan],
-      [unit * 0.4, 0.22, C.cyan],
-      [Math.max(1.5, unit * 0.1), 0.95, C.hot],
+      [unit * 0.9, 0.08, this.theme.wall],
+      [unit * 0.4, 0.22, this.theme.wall],
+      [Math.max(1.5, unit * 0.1), 0.95, this.theme.hot],
     ] as const) {
       path();
       g.stroke({ width, color, alpha, cap: 'butt' });
@@ -314,8 +331,8 @@ export class NeonRenderer {
     const l = this.layout!;
     const unit = Math.min(l.cellW, l.cellH);
     const g = this.edges;
-    g.rect(l.x, l.y, l.width, l.height).stroke({ width: unit * 0.4, color: C.cyan, alpha: 0.2 });
-    g.rect(l.x, l.y, l.width, l.height).stroke({ width: Math.max(1.5, unit * 0.1), color: C.hot, alpha: 0.9 });
+    g.rect(l.x, l.y, l.width, l.height).stroke({ width: unit * 0.4, color: this.theme.wall, alpha: 0.2 });
+    g.rect(l.x, l.y, l.width, l.height).stroke({ width: Math.max(1.5, unit * 0.1), color: this.theme.hot, alpha: 0.9 });
   }
 
   /** Growing halves: flickering beams with a bright tip, so a vulnerable wall never looks finished. */
@@ -335,9 +352,9 @@ export class NeonRenderer {
       const sy = cy(first) - half.dy * l.cellH * 0.5;
       const flicker = 0.65 + 0.35 * Math.sin(now / 37 + head.x * 3 + head.y * 5) * Math.sin(now / 23);
       for (const [width, alpha, color] of [
-        [unit * 1.1, 0.12, C.cyan],
-        [unit * 0.5, 0.35, C.cyan],
-        [unit * 0.16, flicker, C.hot],
+        [unit * 1.1, 0.12, this.theme.wall],
+        [unit * 0.5, 0.35, this.theme.wall],
+        [unit * 0.16, flicker, this.theme.hot],
       ] as const) {
         g.moveTo(sx, sy).lineTo(cx(head), cy(head)).stroke({ width, color, alpha, cap: 'round' });
       }

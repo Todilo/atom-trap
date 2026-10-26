@@ -18,13 +18,16 @@ export interface Prefs {
   sfx: boolean;
   haptics: boolean;
   speed: ClassicSpeed;
+  /** Display name of the colour theme. */
+  theme: string;
 }
 
 const onOff = (on: boolean) => (on ? 'On' : 'Off');
 
-/** Music, sound and vibration switches (ADR-0008); vibration only where the device supports it. */
+/** Theme, music, sound and vibration switches (ADR-0008); vibration only where the device supports it. */
 const toggles = (p: Prefs, hapticsSupported: boolean) => `
     <div class="buttons toggles">
+      ${button('toggle-theme', `Theme: ${p.theme}`)}
       ${button('toggle-music', `Music: ${onOff(p.music)}`)}
       ${button('toggle-sfx', `Sound: ${onOff(p.sfx)}`)}
       ${hapticsSupported ? button('toggle-haptics', `Vibration: ${onOff(p.haptics)}`) : ''}
