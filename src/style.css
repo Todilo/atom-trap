@@ -1539,7 +1539,7 @@ body {
 #screen svg.star {
   width: 22px;
   height: 22px;
-  fill: var(--grid);
+  fill: var(--line);
   stroke: none;
 }
 
@@ -1653,4 +1653,87 @@ body {
 
 #screen .version-row button {
   flex: none;
+}
+
+/* No HUD outside a game. */
+#hud[hidden] {
+  display: none;
+}
+
+/* The attract screen: the demo plays full-screen, the logo above it and "Tap to play" below. */
+#screen.attract-screen {
+  background: transparent;
+}
+
+#screen .attract {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: max(24px, 6dvh) 16px max(24px, 7dvh);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+#screen .attract-brand {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 24px;
+  border-radius: 16px;
+  background: var(--overlay);
+}
+
+#screen .attract-brand .logo {
+  width: 52px;
+  height: 52px;
+}
+
+#screen .attract-name {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 44px;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  text-shadow: 0 0 18px var(--accent-soft);
+}
+
+#screen .attract-cta {
+  padding: 12px 28px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  background: var(--overlay);
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 20px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text);
+  box-shadow: 0 0 24px var(--accent-soft);
+  animation: attract-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes attract-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (max-height: 520px), (orientation: portrait) and (max-width: 520px) {
+  #screen .attract-name {
+    font-size: 30px;
+  }
+  #screen .attract-brand .logo {
+    width: 36px;
+    height: 36px;
+  }
+  #screen .attract-cta {
+    font-size: 15px;
+    padding: 8px 20px;
+  }
 }

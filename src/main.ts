@@ -8,7 +8,9 @@ import { cellAt, layoutBoard } from './game/layout';
 import { Progress, Run, type RunKind } from './game/run';
 import { NeonRenderer, snapshot, type Snapshot } from './render/neonRenderer';
 import { modeById, type GameModeId } from './game/modes';
-import { MAX_STARS, PUZZLES, PuzzleProgress, startPuzzle, starsFor } from './game/puzzles';
+import { BotPlayer } from './game/bot';
+import { DailyProgress, dailyBoard, dailyPar, dayKey, dayNumber, shareText } from './game/daily';
+import { MAX_STARS, PUZZLES, PuzzleProgress, startPuzzle, starsFor, type Puzzle } from './game/puzzles';
 import { AtomPreview } from './render/atomPreview';
 import { createLevel } from './sim/levels';
 import { LAYOUTS } from './sim/layouts';
@@ -20,6 +22,8 @@ import {
   highScoresScreen,
   levelClearedScreen,
   pauseScreen,
+  attractScreen,
+  dailyResultScreen,
   puzzleClearedScreen,
   puzzleFailedScreen,
   puzzlesScreen,
@@ -28,6 +32,7 @@ import {
   titleScreen,
   type Prefs,
   type PuzzleSummary,
+  type DailySummary,
 } from './shell/screens';
 import { localStore } from './shell/storage';
 import type { ClassicSpeed } from './sim/ruleset';
@@ -59,9 +64,45 @@ const hud = {
   pause: $('hud-pause'),
 };
 const screenEl = $('screen');
+const hudEl = $('hud');
 const host = $('app');
 const progress = new Progress(localStore);
 const puzzleProgress = new PuzzleProgress(localStore);
+const dailyProgress = new DailyProgress(localStore);
+
+/** Today's par, worked out once per day and device by the bot (src/game/daily.ts). */
+let dailyParFor: { key: string; par: Promise<[number, number]> } | null = null;
+let dailyParReady: { key: string; par: [number, number] } | null = null;
+
+function ensureDailyPar(key: string): void {
+  const cached = dailyProgress.cachedPar(key);
+  if (cached) {
+    dailyParReady = { key, par: cached };
+    return;
+  }
+  if (dailyParFor?.key === key) return;
+  const par = dailyPar(dailyBoard(key));
+  dailyParFor = { key, par };
+  void par.then((p) => {
+    dailyProgress.cachePar(key, p);
+    dailyParReady = { key, par: p };
+    // The title waits for it: redraw if it's still showing.
+    if (screenEl.querySelector('.page.title')) redraw?.();
+  });
+}
+
+function dailySummary(): DailySummary {
+  const key = dayKey(new Date());
+  ensureDailyPar(key);
+  return {
+    key,
+    number: dayNumber(key),
+    par: dailyParReady?.key === key ? dailyParReady.par : null,
+    result: dailyProgress.result(key),
+    streak: dailyProgress.streak(key),
+    history: dailyProgress.history(),
+  };
+}
 
 function puzzleSummary(): PuzzleSummary {
   const stars = puzzleProgress.stars;
@@ -110,8 +151,54 @@ type Mode = 'menu' | 'playing' | 'paused' | 'cleared' | 'over';
 let mode: Mode = 'menu';
 /** The Classic run in progress, if any; at most one of `run` and `puzzle` is set. */
 let run: Run | null = null;
-/** The puzzle in progress, if any. */
-let puzzle: { index: number; sim: Simulation } | null = null;
+/**
+ * The puzzle-style game in progress, if any: a Puzzle (`index` into PUZZLES) or a Daily board
+ * (`daily`, scored or practice). Both play the same way.
+ */
+let puzzle: { def: Puzzle; index: number | null; daily: { key: string; scored: boolean } | null; sim: Simulation } | null = null;
+
+/**
+ * The demo on the attract screen: the bot (src/game/bot.ts) plays a Classic board, sometimes on a
+ * layout, like the original's demo. The game opens on it and returns to it after the title sits idle.
+ * Silent, and off for reduced motion (the game then opens on the menu).
+ */
+let demo: { sim: Simulation; bot: BotPlayer; endedAt: number | null } | null = null;
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+/** A lighter bot than the tuner's, so its look-ahead never makes a frame stutter on a phone. */
+const DEMO_BOT = { candidates: 10, sloppiness: 0.3 };
+
+function newDemo(): void {
+  const seed = (Math.random() * 0xffffffff) >>> 0;
+  // Half the demos show off a layout.
+  const layout = Math.random() < 0.5 ? LAYOUTS[Math.floor(Math.random() * LAYOUTS.length)].id : undefined;
+  const sim = createLevel({ level: 2 + Math.floor(Math.random() * 3), layout, seed });
+  demo = { sim, bot: new BotPlayer(seed, DEMO_BOT), endedAt: null };
+  previous = snapshot(sim);
+  accumulator = 0;
+}
+
+/** Whether the demo should run now: on the attract screen. */
+const demoShowing = () => mode === 'menu' && !run && !puzzle && screenEl.classList.contains('attract-screen');
+
+/** Back to the demo after this long on the title screen without any input. */
+const ATTRACT_AFTER_MS = 20_000;
+let lastInput = performance.now();
+for (const type of ['pointerdown', 'pointermove', 'keydown'] as const) window.addEventListener(type, () => (lastInput = performance.now()), { capture: true });
+
+function showAttract(): void {
+  if (reducedMotion.matches) return showMenu();
+  mode = 'menu';
+  run = null;
+  puzzle = null;
+  setHint(false);
+  demo = null;
+  showScreen(attractScreen(coarsePointer), 'attract-screen');
+}
+
+// Any key on the attract screen brings up the menu, like a tap.
+window.addEventListener('keydown', () => {
+  if (demoShowing()) showMenu();
+});
 /** The simulation before its latest step, for drawing smoothly between steps. */
 let previous: Snapshot = { atoms: [], halves: { a: null, b: null } };
 let accumulator = 0;
@@ -132,13 +219,14 @@ function setHint(show: boolean): void {
   hintEl.hidden = !show;
 }
 
+/** The game being played; the title demo is drawn separately. */
 const sim = (): Simulation | null => run?.sim ?? puzzle?.sim ?? null;
 
 /** Redraws the screen on show, for switches and tabs that change it in place. */
 let redraw: (() => void) | null = null;
 
 /** A page covers the whole stage; a dialog sits over the dimmed board. */
-function showScreen(html: string | null, kind: 'page' | 'dialog' = 'dialog', draw: (() => void) | null = null): void {
+function showScreen(html: string | null, kind: 'page' | 'dialog' | 'attract-screen' = 'dialog', draw: (() => void) | null = null): void {
   // Redrawing the same screen (a switch flipped) keeps its scroll position.
   const scroll = draw && draw === redraw ? screenEl.scrollTop : 0;
   redraw = draw;
@@ -190,12 +278,12 @@ function showMenu(): void {
   setHint(false);
   void checkForUpdate().catch(() => {});
   const draw = () =>
-    showScreen(titleScreen(progress.highestLevel, prefs(), progress.highScores[0]?.score ?? null, puzzleSummary()), 'page', draw);
+    showScreen(titleScreen(progress.highestLevel, prefs(), progress.highScores[0]?.score ?? null, puzzleSummary(), dailySummary()), 'page', draw);
   draw();
 }
 
 function showScores(tab: GameModeId): void {
-  const draw = () => showScreen(highScoresScreen(progress.highScores, tab, progress.highestLevel, puzzleSummary()), 'page', draw);
+  const draw = () => showScreen(highScoresScreen(progress.highScores, tab, progress.highestLevel, puzzleSummary(), dailySummary()), 'page', draw);
   draw();
 }
 
@@ -245,13 +333,14 @@ function showPause(): void {
   const s = sim()!;
   const info = puzzle
     ? {
-        where: `Puzzle ${puzzle.index + 1} · ${PUZZLES[puzzle.index].name}`,
+        where: puzzle.daily ? `${puzzle.def.name}${puzzle.daily.scored ? '' : ' · practice'}` : `Puzzle ${puzzle.index! + 1} · ${puzzle.def.name}`,
         stats: [
           ['Walls', String(s.wallsPlaced)],
-          ['Par', String(PUZZLES[puzzle.index].par[0])],
+          ['Par', String(puzzle.def.par[0])],
           ['Lives', String(s.lives)],
         ] as [string, string][],
-        canRestart: true,
+        // The Daily's scored try can't be restarted, or a bad board could be tried again.
+        canRestart: !puzzle.daily?.scored,
       }
     : {
         where: `Classic · Level ${run!.level}`,
@@ -275,8 +364,35 @@ function startRun(kind: RunKind): void {
 function playPuzzle(index: number): void {
   if (!puzzleProgress.unlocked(index) || !PUZZLES[index]) return;
   run = null;
-  puzzle = { index, sim: startPuzzle(PUZZLES[index]) };
+  puzzle = { def: PUZZLES[index], index, daily: null, sim: startPuzzle(PUZZLES[index]) };
   beginLevel();
+}
+
+/** Today's Daily: the scored try if it's still unused, otherwise practice. */
+function playDaily(practice: boolean): void {
+  const key = dayKey(new Date());
+  if (dailyParReady?.key !== key) return;
+  const def: Puzzle = { ...dailyBoard(key), par: dailyParReady.par };
+  const scored = !practice && dailyProgress.start(key, def.par);
+  run = null;
+  puzzle = { def, index: null, daily: { key, scored }, sim: startPuzzle(def) };
+  beginLevel();
+}
+
+async function shareDaily(button: HTMLElement): Promise<void> {
+  const key = dayKey(new Date());
+  const result = dailyProgress.result(key);
+  if (!result) return;
+  const text = shareText(key, result, dailyProgress.streak(key));
+  try {
+    if (navigator.share) await navigator.share({ text });
+    else {
+      await navigator.clipboard.writeText(text);
+      button.textContent = 'Copied';
+    }
+  } catch {
+    // Cancelled, or no permission: nothing to do.
+  }
 }
 
 function beginLevel(): void {
@@ -309,6 +425,8 @@ screenEl.addEventListener('click', (e) => {
   }
   const [name, arg] = action.split(':');
   switch (name) {
+    case 'wake':
+      return showMenu();
     case 'play':
       return startRun('scored');
     case 'continue':
@@ -320,8 +438,15 @@ screenEl.addEventListener('click', (e) => {
     case 'puzzle':
       return playPuzzle(Number(arg));
     case 'retry':
-      if (puzzle) playPuzzle(puzzle.index);
+      if (puzzle?.daily) playDaily(true);
+      else if (puzzle) playPuzzle(puzzle.index!);
       return;
+    case 'daily':
+      return playDaily(false);
+    case 'daily-practice':
+      return playDaily(true);
+    case 'daily-share':
+      return void shareDaily((e.target as HTMLElement).closest('button')!);
     case 'mode':
       prefsStore.mode = modeById(arg).id;
       savePrefs();
@@ -467,7 +592,7 @@ interface PuzzleAttempt {
 }
 
 function logPuzzleAttempt(s: Simulation, cleared: boolean): void {
-  if (!import.meta.env.DEV || !puzzle) return;
+  if (!import.meta.env.DEV || puzzle?.index == null) return;
   const log = localStore.get<PuzzleAttempt[]>('puzzleLog', []);
   log.push({ puzzle: puzzle.index, cleared, walls: s.wallsPlaced, livesLost: s.rules.lives - s.lives });
   localStore.set('puzzleLog', log.slice(-1000));
@@ -477,16 +602,24 @@ function handleStepEvents(s: Simulation): void {
   for (const e of s.step()) {
     audio.event(e);
     haptics.event(e);
-    if (puzzle && e.type === 'level-cleared') {
+    if (puzzle?.daily && (e.type === 'level-cleared' || e.type === 'game-over')) {
+      const cleared = e.type === 'level-cleared';
+      mode = cleared ? 'cleared' : 'over';
+      const { key, scored } = puzzle.daily;
+      if (scored) dailyProgress.finish(key, cleared, s.wallsPlaced);
+      showScreen(
+        dailyResultScreen({ number: dayNumber(key), cleared, walls: s.wallsPlaced, par: puzzle.def.par, scored, streak: dailyProgress.streak(key) }),
+      );
+    } else if (puzzle?.index != null && e.type === 'level-cleared') {
       mode = 'cleared';
       logPuzzleAttempt(s, true);
-      const stars = starsFor(PUZZLES[puzzle.index], s.wallsPlaced);
+      const stars = starsFor(puzzle.def, s.wallsPlaced);
       const improved = puzzleProgress.record(puzzle.index, s.wallsPlaced);
       const best = puzzleProgress.bestWalls[puzzle.index] ?? s.wallsPlaced;
       showScreen(
         puzzleClearedScreen({ index: puzzle.index, stars, improved, wallsUsed: s.wallsPlaced, best, hasNext: puzzle.index + 1 < PUZZLES.length }),
       );
-    } else if (puzzle && e.type === 'game-over') {
+    } else if (puzzle?.index != null && e.type === 'game-over') {
       logPuzzleAttempt(s, false);
       mode = 'over';
       showScreen(puzzleFailedScreen(e.reason, puzzle.index));
@@ -513,6 +646,15 @@ function handleStepEvents(s: Simulation): void {
 }
 
 renderer.app.ticker.add((ticker) => {
+  if (demoShowing()) return drawDemo(ticker.deltaMS);
+  // A title screen left alone goes back to the demo.
+  if (mode === 'menu' && !reducedMotion.matches && screenEl.querySelector('.page.title') && performance.now() - lastInput > ATTRACT_AFTER_MS) {
+    return showAttract();
+  }
+  if (demo) {
+    demo = null;
+    previous = sim() ? snapshot(sim()!) : { atoms: [], halves: { a: null, b: null } };
+  }
   const s = sim();
   if (s && mode === 'playing' && !hintActive) {
     accumulator += Math.min(ticker.deltaMS, 250);
@@ -528,6 +670,25 @@ renderer.app.ticker.add((ticker) => {
   audio.setGrowing(growing);
 });
 
+/** Steps and draws the title demo; a finished board makes way for a new one after a short pause. */
+function drawDemo(deltaMS: number): void {
+  if (!demo || (demo.endedAt !== null && performance.now() - demo.endedAt > 2000)) newDemo();
+  const d = demo!;
+  if (d.sim.status === 'playing') {
+    accumulator += Math.min(deltaMS, 250);
+    while (accumulator >= d.sim.rules.stepMs && d.sim.status === 'playing') {
+      previous = snapshot(d.sim);
+      d.bot.act(d.sim);
+      d.sim.step();
+      accumulator -= d.sim.rules.stepMs;
+    }
+    if (d.sim.status !== 'playing') d.endedAt = performance.now();
+  }
+  renderer.draw(d.sim, previous, d.sim.status === 'playing' ? accumulator / d.sim.rules.stepMs : 1);
+  updateHud();
+  audio.setGrowing(0);
+}
+
 /** Lives show as dots up to this many; above it, as a number. */
 const MAX_LIFE_DOTS = 8;
 let shownLives = '';
@@ -535,8 +696,8 @@ let shownStars = -1;
 
 function updateHud(): void {
   const s = sim();
-  hud.mode.textContent = puzzle ? 'Puzzle' : 'Classic';
-  hud.level.textContent = String(puzzle ? puzzle.index + 1 : (run?.level ?? progress.highestLevel));
+  hud.mode.textContent = puzzle?.daily ? 'Daily' : puzzle ? 'Puzzle' : 'Classic';
+  hud.level.textContent = puzzle?.daily ? `#${dayNumber(puzzle.daily.key)}` : String(puzzle ? puzzle.index! + 1 : (run?.level ?? progress.highestLevel));
   const lives = s?.lives ?? 0;
   const maxLives = s?.rules.lives ?? 0;
   const livesKey = `${lives}/${maxLives}`;
@@ -554,9 +715,9 @@ function updateHud(): void {
   hud.target.textContent = `/ ${target}%`;
   hud.targetMark.style.left = `${target}%`;
   // Puzzles show walls used against par, and the stars still within reach, instead of a score.
-  hud.scoreLabel.textContent = puzzle ? `Walls · par ${PUZZLES[puzzle.index].par[0]}` : 'Score';
+  hud.scoreLabel.textContent = puzzle ? `Walls · par ${puzzle.def.par[0]}` : 'Score';
   hud.score.textContent = puzzle ? String(s?.wallsPlaced ?? 0) : Math.round(run?.score ?? 0).toLocaleString('en-US');
-  const reachable = puzzle && s ? starsFor(PUZZLES[puzzle.index], s.wallsPlaced) : -1;
+  const reachable = puzzle && s ? starsFor(puzzle.def, s.wallsPlaced) : -1;
   if (reachable !== shownStars) {
     shownStars = reachable;
     hud.stars.innerHTML = reachable < 0 ? '' : [0, 1, 2].map((i) => `<i${i < reachable ? ' class="on"' : ''}>★</i>`).join('');
@@ -569,6 +730,8 @@ function updateHud(): void {
   hud.timeBar.style.width = `${s ? (100 * time) / s.rules.timeLimit : 0}%`;
   hud.timeBar.classList.toggle('low', !!s && time <= s.rules.timeWarningAt);
   hud.pause.hidden = mode !== 'playing' && mode !== 'paused';
+  // The HUD belongs to a game; the menus (and the demo behind the title) have none.
+  hudEl.hidden = mode === 'menu';
   // Offer a new version only between runs, so reloading never throws away a game in progress.
   updateEl.hidden = !updateReady || (mode !== 'menu' && mode !== 'over');
 }
@@ -633,4 +796,4 @@ if (import.meta.env.DEV) Object.defineProperty(window, 'atomTrap', {
     }),
   });
 
-showMenu();
+showAttract();

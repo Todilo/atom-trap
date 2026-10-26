@@ -1,5 +1,5 @@
 /**
- * The game modes shown on the title screen. Classic and Puzzle are playable; the others are
+ * The game modes shown on the title screen. Classic, Puzzle and Daily are playable; the others are
  * placeholders so the menu, high scores and HUD are built for more than one mode (ADR-0002).
  * Adding a mode: give it an entry here, then a ruleset and a run kind for it.
  */
@@ -39,11 +39,10 @@ export const GAME_MODES: GameMode[] = [
   {
     id: 'daily',
     name: 'Daily',
-    blurb: 'One seeded board for everyone, once a day. Share your result.',
-    rules: ['One seeded board', 'One attempt', 'Shareable result'],
-    footnote: 'A new board every day',
-    available: false,
-    scoresNote: 'Each day gets its own board and its own table, with your streak beside it.',
+    blurb: 'A new board every day, the same for everyone. One scored try, then share it.',
+    rules: ['One board a day', 'One scored try', 'Beat par', 'Share your result'],
+    footnote: '',
+    available: true,
   },
   {
     id: 'arcade',

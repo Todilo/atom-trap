@@ -1,3 +1,4 @@
+import { dailyStars, dayNumber, type DailyResult } from '../game/daily';
 import { GAME_MODES, modeById, type GameModeId } from '../game/modes';
 import { PUZZLES } from '../game/puzzles';
 import { layoutById } from '../sim/layouts';
@@ -86,7 +87,35 @@ function boardThumb(layoutId: string | undefined): string {
   return `<svg class="thumb" viewBox="0 0 28 20" preserveAspectRatio="none" aria-hidden="true"><rect class="thumb-board" width="28" height="20"/><g class="thumb-cells">${cells}</g></svg>`;
 }
 
-export function titleScreen(highestLevel: number, prefs: Prefs, bestScore: number | null, puzzles: PuzzleSummary): string {
+/** Today's Daily, for the title screen and the Daily scores tab. */
+export interface DailySummary {
+  key: string;
+  number: number;
+  /** Null while the device works out the day's par. */
+  par: [number, number] | null;
+  /** Today's scored try, once taken. */
+  result: DailyResult | null;
+  streak: number;
+  history: { key: string; result: DailyResult }[];
+}
+
+function dailyOutcome(r: DailyResult): string {
+  return r.cleared ? `${stars(dailyStars(r), 'small')} ${r.walls} walls` : 'Not cleared';
+}
+
+/**
+ * The attract screen the game opens on: the demo plays full-screen behind the logo, and a tap
+ * anywhere (the whole screen is the button) brings up the menu.
+ */
+export function attractScreen(touch: boolean): string {
+  return `
+    <button type="button" class="attract" data-action="wake" aria-label="Show the menu">
+      <span class="attract-brand">${logo}<span class="attract-name">Atom Trap</span></span>
+      <span class="attract-cta">${touch ? 'Tap to play' : 'Click to play'}</span>
+    </button>`;
+}
+
+export function titleScreen(highestLevel: number, prefs: Prefs, bestScore: number | null, puzzles: PuzzleSummary, daily: DailySummary): string {
   const selected = modeById(prefs.mode);
   const cards = GAME_MODES.map((m) => {
     const on = m.id === selected.id;
@@ -97,7 +126,11 @@ export function titleScreen(highestLevel: number, prefs: Prefs, bestScore: numbe
           : 'No score yet'
         : m.id === 'puzzle'
           ? `Stars <b>${puzzles.total} / ${puzzles.max}</b>`
-          : m.footnote;
+          : m.id === 'daily'
+            ? daily.result
+              ? `Today ${dailyOutcome(daily.result)}`
+              : `#${daily.number} is ready${daily.streak ? ` · streak <b>${daily.streak}</b>` : ''}`
+            : m.footnote;
     return `
       <button type="button" class="mode-card${on ? ' selected' : ''}" data-action="mode:${m.id}" aria-pressed="${on}">
         <span class="mode-art">${MODE_ART[m.id]}</span>
@@ -110,8 +143,17 @@ export function titleScreen(highestLevel: number, prefs: Prefs, bestScore: numbe
   }).join('');
 
   const next = puzzles.suggested;
+  const dailyActions = daily.result
+    ? `<p class="soon-note">Today: ${dailyOutcome(daily.result)}${daily.streak ? ` · streak ${daily.streak}` : ''}. A new board at midnight.</p>
+      ${button('daily-practice', `${icon.restart}Practice`, 'secondary')}
+      ${button('daily-share', 'Share result', 'primary big')}`
+    : daily.par
+      ? `${button('daily', `${icon.play}Play Daily #${daily.number}`, 'primary big')}`
+      : `<button type="button" class="soon" disabled>Preparing today's board…</button>`;
   const actions =
-    selected.id === 'puzzle'
+    selected.id === 'daily'
+      ? dailyActions
+      : selected.id === 'puzzle'
       ? `${button('puzzles', 'All puzzles', 'secondary')}
       ${button(`puzzle:${next}`, `${icon.play}Puzzle ${next + 1}`, 'primary big')}`
       : selected.available
@@ -344,7 +386,7 @@ export function gameOverScreen(
     </div>`;
 }
 
-export function highScoresScreen(scores: HighScore[], tab: GameModeId, highestLevel: number, puzzles: PuzzleSummary): string {
+export function highScoresScreen(scores: HighScore[], tab: GameModeId, highestLevel: number, puzzles: PuzzleSummary, daily: DailySummary): string {
   const tabs = GAME_MODES.map(
     (m) => button(`scores:${m.id}`, m.name, m.id === tab ? 'on' : '', `role="tab" aria-selected="${m.id === tab}"`),
   ).join('');
@@ -365,6 +407,28 @@ export function highScoresScreen(scores: HighScore[], tab: GameModeId, highestLe
             <span class="dim">${puzzles.stars.filter((s) => s > 0).length} of ${PUZZLES.length} puzzles solved</span>
           </div>
           <div class="panel">${button('puzzles', 'Open puzzles', 'secondary')}</div>
+        </aside>
+      </div>`;
+  } else if (mode.id === 'daily') {
+    const rows = daily.history
+      .map(
+        ({ key, result }) =>
+          `<tr><td class="rank">#${dayNumber(key)}</td><td class="dim">${key}</td><td>${dailyOutcome(result)}</td><td class="dim num">par ${result.par[0]}</td></tr>`,
+      )
+      .join('');
+    body = `
+      <div class="score-layout" role="tabpanel">
+        <section class="panel table-panel">${
+          rows
+            ? `<table class="scores"><thead><tr><th>Day</th><th>Date</th><th>Result</th><th class="num">Par</th></tr></thead><tbody>${rows}</tbody></table>`
+            : '<p class="note">No Daily played yet. A new board arrives every day.</p>'
+        }</section>
+        <aside class="side">
+          <div class="panel best">
+            <span class="section-label">Streak</span>
+            <b>${daily.streak}</b>
+            <span class="dim">${daily.streak === 1 ? 'day' : 'days'} in a row</span>
+          </div>
         </aside>
       </div>`;
   } else if (mode.id !== 'classic') {
@@ -478,5 +542,35 @@ export function puzzleFailedScreen(reason: 'lives' | 'time' | 'walls', index: nu
         ${button('puzzles', 'All puzzles', 'secondary grow')}
         ${button('retry', `${icon.restart}Retry`, 'primary big grow')}
       </div>
+    </div>`;
+}
+
+/** What the Daily result dialog shows. */
+export interface DailyEnd {
+  number: number;
+  cleared: boolean;
+  walls: number;
+  par: [number, number];
+  /** False for practice games after the day's scored try. */
+  scored: boolean;
+  streak: number;
+}
+
+export function dailyResultScreen(d: DailyEnd): string {
+  const earned = d.cleared ? dailyStars({ cleared: true, walls: d.walls, par: d.par }) : 0;
+  return `
+    <div class="dialog${d.cleared ? ' gold' : ''}" role="dialog" aria-labelledby="dlg-title">
+      <div class="dialog-head">
+        <p class="kicker">Daily #${d.number}${d.scored ? '' : ' · practice'}</p>
+        <h2 id="dlg-title" class="glow${d.cleared ? ' gold' : ''}">${d.cleared ? 'Solved' : 'Not cleared'}</h2>
+      </div>
+      ${d.cleared ? stars(earned, 'big') : ''}
+      <p class="sub">${d.cleared ? `${d.walls} walls · par ${d.par[0]}` : 'Every life lost to a broken wall.'}${d.scored && d.streak ? ` · streak ${d.streak}` : ''}</p>
+      ${d.scored ? '' : '<p class="note">Practice games don’t change today’s result.</p>'}
+      <div class="row">
+        ${button('menu', 'Menu', 'secondary grow')}
+        ${d.scored ? button('daily-share', 'Share result', 'primary big grow') : button('daily-practice', `${icon.restart}Again`, 'primary big grow')}
+      </div>
+      ${d.scored ? button('daily-practice', 'Practice this board', 'ghost') : ''}
     </div>`;
 }
