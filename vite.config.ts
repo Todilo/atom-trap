@@ -8,7 +8,7 @@ export default defineConfig({
   base,
   plugins: [
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
       includeAssets: ['icons/favicon.svg'],
       manifest: {
         name: 'Atom Trap',

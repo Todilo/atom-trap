@@ -1,6 +1,6 @@
 import { GAME_MODES, modeById, type GameModeId } from '../game/modes';
 import { MAX_NAME_LENGTH, type HighScore } from '../game/run';
-import { THEMES } from '../render/themes';
+import { ATOM_STYLES, THEMES, type AtomStyle } from '../render/themes';
 import type { ClassicSpeed, LevelBonus } from '../sim/ruleset';
 
 /**
@@ -22,6 +22,8 @@ const icon = {
   sliders:
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>',
   back: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>',
+  left: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>',
+  right: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>',
   play: '<svg viewBox="0 0 24 24" aria-hidden="true" class="filled"><path d="M6 4l14 8-14 8z"/></svg>',
   next: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
   music: (on: boolean) =>
@@ -49,6 +51,7 @@ export interface Prefs {
   speed: ClassicSpeed;
   /** Colour theme id. */
   theme: string;
+  atomStyle: AtomStyle;
   /** The mode selected on the title screen. */
   mode: GameModeId;
 }
@@ -110,7 +113,14 @@ function toggle(action: string, label: string, hint: string, on: boolean): strin
     </div>`;
 }
 
-export function settingsScreen(prefs: Prefs, hapticsSupported: boolean, back: 'menu' | 'pause'): string {
+/** Atom styles shown at a time in Settings; the arrows page through the rest. */
+export const ATOM_PAGE_SIZE = 3;
+
+/**
+ * `atomPage` picks which atom styles show. Each one gets a canvas that the shell fills with a live
+ * preview drawn by the game's own atom painter (`data-atom-preview`).
+ */
+export function settingsScreen(prefs: Prefs, hapticsSupported: boolean, back: 'menu' | 'pause', atomPage: number): string {
   const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
   const swatches = THEMES.map((t) => {
     const on = t.id === prefs.theme;
@@ -123,6 +133,17 @@ export function settingsScreen(prefs: Prefs, hapticsSupported: boolean, back: 'm
         <span>${t.name}</span>
       </button>`;
   }).join('');
+  const pages = Math.ceil(ATOM_STYLES.length / ATOM_PAGE_SIZE);
+  const atoms = ATOM_STYLES.slice(atomPage * ATOM_PAGE_SIZE, (atomPage + 1) * ATOM_PAGE_SIZE)
+    .map((a) => {
+      const on = a.id === prefs.atomStyle;
+      return `
+      <button type="button" role="radio" class="swatch${on ? ' selected' : ''}" data-action="atom:${a.id}" aria-checked="${on}">
+        <canvas class="atom-preview" data-atom-preview="${a.id}" aria-hidden="true"></canvas>
+        <span>${a.name}</span>
+      </button>`;
+    })
+    .join('');
   return `
     <div class="page settings">
       <header class="topbar">
@@ -132,6 +153,12 @@ export function settingsScreen(prefs: Prefs, hapticsSupported: boolean, back: 'm
         <section class="panel">
           <h2 class="section-label">Theme</h2>
           <div class="swatches" role="radiogroup" aria-label="Theme">${swatches}</div>
+          <div class="label-row"><h2 class="section-label">Atoms</h2><span class="dim">${atomPage + 1} / ${pages}</span></div>
+          <div class="carousel">
+            ${button('atoms-page:-1', icon.left, 'icon', 'aria-label="Previous atom styles"')}
+            <div class="swatches atoms" role="radiogroup" aria-label="Atoms">${atoms}</div>
+            ${button('atoms-page:1', icon.right, 'icon', 'aria-label="More atom styles"')}
+          </div>
         </section>
         <section class="panel">
           <h2 class="section-label">Sound &amp; feel</h2>

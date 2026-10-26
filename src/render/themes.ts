@@ -102,6 +102,29 @@ export const THEMES: Theme[] = [
   },
 ];
 
+/** How atoms are drawn, chosen in Settings next to the theme. Colours still come from the theme. */
+export type AtomStyle = 'soft' | 'glass' | 'plasma' | 'atom' | 'ring' | 'comet' | 'eclipse' | 'spark' | 'gyro' | 'swarm' | 'irid' | 'pulse';
+
+/** In the order Settings shows them; the first is the default. Drawn by src/render/atomPainter.ts. */
+export const ATOM_STYLES: { id: AtomStyle; name: string }[] = [
+  { id: 'soft', name: 'Soft orb' },
+  { id: 'glass', name: 'Glass' },
+  { id: 'plasma', name: 'Plasma' },
+  { id: 'irid', name: 'Iridescent' },
+  { id: 'gyro', name: 'Gyroscope' },
+  { id: 'atom', name: 'Real atom' },
+  { id: 'ring', name: 'Neon ring' },
+  { id: 'pulse', name: 'Pulse' },
+  { id: 'eclipse', name: 'Eclipse' },
+  { id: 'comet', name: 'Comet' },
+  { id: 'swarm', name: 'Firefly swarm' },
+  { id: 'spark', name: 'Spark ball' },
+];
+
+export function atomStyleById(id: string): AtomStyle {
+  return ATOM_STYLES.find((s) => s.id === id)?.id ?? 'soft';
+}
+
 export function themeById(id: string): Theme {
   return THEMES.find((t) => t.id === id) ?? THEMES[0];
 }

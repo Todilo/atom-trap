@@ -1,6 +1,7 @@
-import { Application, Container, Graphics, Sprite, Texture } from 'pixi.js';
+import { Application, Container, Graphics, Sprite } from 'pixi.js';
 import type { BoardLayout } from '../game/layout';
-import type { Theme } from './themes';
+import { AtomPainter, glowTexture } from './atomPainter';
+import type { AtomStyle, Theme } from './themes';
 import { CELL_GROWING_A, CELL_GROWING_B, CELL_OPEN, CELL_REMOVED, type Atom, type Simulation } from '../sim/simulation';
 
 /**
@@ -9,9 +10,6 @@ import { CELL_GROWING_A, CELL_GROWING_B, CELL_OPEN, CELL_REMOVED, type Atom, typ
  * (ADR-0005). Effects come from comparing the grid between frames. Colours come from the active theme.
  */
 
-const TRAIL_LENGTH = 7;
-/** Trail points fade out over this time, so an atom that stops (or is stuck) loses its trail. */
-const TRAIL_MS = 280;
 /** Delay per cell of the fill sweep, spreading out from the wall that closed the area. */
 const SWEEP_MS_PER_CELL = 16;
 const FILL_FLASH_MS = 450;
@@ -24,53 +22,15 @@ interface Particle {
   maxLife: number;
 }
 
-function glowTexture(size = 64): Texture {
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = size;
-  const ctx = canvas.getContext('2d')!;
-  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-  g.addColorStop(0, 'rgba(255,255,255,1)');
-  g.addColorStop(0.18, 'rgba(255,255,255,0.85)');
-  g.addColorStop(0.4, 'rgba(255,255,255,0.25)');
-  g.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, size, size);
-  return Texture.from(canvas);
-}
-
-/** The atom's body: a solid orb in the theme's atom colour, with a hot white centre and a thin soft rim. */
-function orbTexture(theme: Theme, size = 64): Texture {
-  const [highlight, body] = theme.atomBody;
-  const fade = (css: string, a: number) => {
-    const n = parseInt(css.slice(1), 16);
-    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
-  };
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = size;
-  const ctx = canvas.getContext('2d')!;
-  const r = size / 2;
-  const g = ctx.createRadialGradient(r * 0.8, r * 0.8, 0, r, r, r);
-  g.addColorStop(0, 'rgba(255,255,255,1)');
-  g.addColorStop(0.3, fade(highlight, 1));
-  g.addColorStop(0.78, fade(body, 1));
-  g.addColorStop(0.87, fade(body, 0.5));
-  g.addColorStop(1, fade(body, 0));
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, size, size);
-  return Texture.from(canvas);
-}
-
 export class NeonRenderer {
   private readonly bg = new Graphics();
   private readonly removed = new Graphics();
   private readonly edges = new Graphics();
   private readonly walls = new Graphics();
-  private readonly trailLayer = new Container();
-  private readonly atomLayer = new Container();
   private readonly fxLayer = new Container();
   private readonly flash = new Graphics();
   private readonly glow = glowTexture();
-  private orb: Texture;
+  private readonly atoms: AtomPainter;
   private cols = 28;
   private rows = 20;
 
@@ -84,11 +44,6 @@ export class NeonRenderer {
   private flashAlpha = 0;
   private lastTime = performance.now();
 
-  private atomSprites: Sprite[] = [];
-  private coreSprites: Sprite[] = [];
-  private trailSprites: Sprite[][] = [];
-  private trails: { x: number; y: number; t: number }[][] = [];
-  private trailLast: ({ x: number; y: number } | null)[] = [];
   private tipSprites: Sprite[] = [];
   private particles: Particle[] = [];
   private spritePool: Sprite[] = [];
@@ -97,13 +52,11 @@ export class NeonRenderer {
     readonly app: Application,
     private theme: Theme,
   ) {
-    this.orb = orbTexture(theme);
+    this.atoms = new AtomPainter(this.glow, theme, 'soft');
     this.edges.blendMode = 'add';
     this.walls.blendMode = 'add';
-    this.trailLayer.blendMode = 'add';
-    this.atomLayer.blendMode = 'add';
     this.fxLayer.blendMode = 'add';
-    app.stage.addChild(this.bg, this.removed, this.edges, this.walls, this.trailLayer, this.atomLayer, this.fxLayer, this.flash);
+    app.stage.addChild(this.bg, this.removed, this.edges, this.walls, this.atoms.view, this.fxLayer, this.flash);
     for (let i = 0; i < 2; i++) {
       const tip = this.makeSprite(theme.hot);
       tip.visible = false;
@@ -135,13 +88,13 @@ export class NeonRenderer {
   setTheme(theme: Theme): void {
     this.theme = theme;
     this.app.renderer.background.color = theme.background;
-    const old = this.orb;
-    this.orb = orbTexture(theme);
-    for (const core of this.coreSprites) core.texture = this.orb;
-    old.destroy(true);
-    for (const s of [...this.atomSprites, ...this.trailSprites.flat()]) s.tint = theme.atom;
+    this.atoms.setTheme(theme);
     for (const tip of this.tipSprites) tip.tint = theme.hot;
     if (this.layout) this.setLayout(this.layout, this.cols, this.rows);
+  }
+
+  setAtomStyle(style: AtomStyle): void {
+    this.atoms.setStyle(style);
   }
 
   setLayout(layout: BoardLayout, cols: number, rows: number): void {
@@ -150,8 +103,7 @@ export class NeonRenderer {
     this.rows = rows;
     const C = this.theme;
     this.edgesDirty = true;
-    for (const t of this.trails) t.length = 0;
-    this.trailLast.fill(null);
+    this.atoms.clearTrails();
     const g = this.bg.clear();
     g.rect(layout.x, layout.y, layout.width, layout.height).fill(C.board);
     for (let x = 1; x < cols; x++) g.moveTo(layout.x + x * layout.cellW, layout.y).lineTo(layout.x + x * layout.cellW, layout.y + layout.height);
@@ -182,6 +134,7 @@ export class NeonRenderer {
       this.removed.clear();
       this.edges.clear();
       this.walls.clear();
+      this.atoms.begin();
       for (const tip of this.tipSprites) tip.visible = false;
       this.edgesDirty = true;
       this.drawBoardEdge();
@@ -199,30 +152,7 @@ export class NeonRenderer {
     this.removedAt = new Float64Array(n).fill(-1);
     this.edgesDirty = true;
     this.prevLives = sim?.lives ?? 0;
-    for (const s of [...this.atomSprites, ...this.coreSprites, ...this.trailSprites.flat()]) s.destroy();
-    this.atomSprites = [];
-    this.coreSprites = [];
-    this.trailSprites = [];
-    this.trails = [];
-    this.trailLast = [];
-    if (!sim) return;
-    for (let i = 0; i < sim.atoms.length; i++) {
-      const trail: Sprite[] = [];
-      for (let t = 0; t < TRAIL_LENGTH; t++) {
-        const s = this.makeSprite(this.theme.atom);
-        trail.push(s);
-        this.trailLayer.addChild(s);
-      }
-      this.trailSprites.push(trail);
-      this.trails.push([]);
-      const glow = this.makeSprite(this.theme.atom);
-      const core = this.makeSprite(0xffffff);
-      core.texture = this.orb;
-      core.blendMode = 'normal';
-      this.atomSprites.push(glow);
-      this.coreSprites.push(core);
-      this.atomLayer.addChild(glow, core);
-    }
+    this.atoms.setCount(sim?.atoms.length ?? 0);
   }
 
   /** Finds walls that broke (growing → open) and newly removed cells, and schedules their effects. */
@@ -375,6 +305,7 @@ export class NeonRenderer {
     const diameter = unit;
     const px = (cx: number) => l.x + (cx + 0.5) * l.cellW;
     const py = (cy: number) => l.y + (cy + 0.5) * l.cellH;
+    this.atoms.begin();
     const contacts = sim.atoms.map((atom, i) => this.contactOffset(previous[i] ?? atom, previous, i, diameter));
     // A bounce also redirects the atom it hit; animate that one towards the contact too, so both meet.
     contacts.forEach((c, i) => {
@@ -397,31 +328,7 @@ export class NeonRenderer {
         x = px(p.x) + (px(atom.x) - px(p.x)) * alpha;
         y = py(p.y) + (py(atom.y) - py(p.y)) * alpha;
       }
-      const glow = this.atomSprites[i];
-      glow.position.set(x, y);
-      glow.scale.set((diameter * 3.2) / 64);
-      const core = this.coreSprites[i];
-      core.position.set(x, y);
-      core.scale.set((diameter * 1.15) / 64);
-
-      const trail = this.trails[i];
-      // Sample a new point only when the atom has moved since the last sample (which may have expired).
-      const last = this.trailLast[i];
-      if (!last || Math.hypot(last.x - x, last.y - y) > Math.max(1, unit * 0.25)) {
-        this.trailLast[i] = { x, y };
-        trail.unshift({ x, y, t: now });
-        if (trail.length > TRAIL_LENGTH) trail.pop();
-      }
-      while (trail.length && now - trail[trail.length - 1].t > TRAIL_MS) trail.pop();
-      this.trailSprites[i].forEach((s, t) => {
-        const pt = trail[t];
-        s.visible = !!pt;
-        if (!pt) return;
-        const k = (1 - t / TRAIL_LENGTH) * (1 - (now - pt.t) / TRAIL_MS);
-        s.position.set(pt.x, pt.y);
-        s.scale.set(((unit * 1.6) / 64) * k);
-        s.alpha = 0.35 * k;
-      });
+      this.atoms.drawAtom(i, x, y, diameter, now);
     });
   }
 

@@ -8,7 +8,8 @@ import { cellAt, layoutBoard } from './game/layout';
 import { Progress, Run, type RunKind } from './game/run';
 import { NeonRenderer } from './render/neonRenderer';
 import { modeById, type GameModeId } from './game/modes';
-import { cssVariables, themeById, type Theme } from './render/themes';
+import { AtomPreview } from './render/atomPreview';
+import { ATOM_STYLES, atomStyleById, cssVariables, themeById, type AtomStyle, type Theme } from './render/themes';
 import { AudioEngine, type AudioSettings } from './shell/audio';
 import { Haptics } from './shell/haptics';
 import {
@@ -16,6 +17,7 @@ import {
   highScoresScreen,
   levelClearedScreen,
   pauseScreen,
+  ATOM_PAGE_SIZE,
   settingsScreen,
   titleScreen,
   type Prefs,
@@ -25,7 +27,6 @@ import { classicAtomCount, type ClassicSpeed } from './sim/ruleset';
 import type { Atom, Simulation } from './sim/simulation';
 
 // The complete Classic game (ADR-0010) with the neon look (ADR-0004) and synth audio (ADR-0008).
-registerSW({ immediate: true });
 
 // Best effort only: browsers allow the orientation lock just in fullscreen / installed mode.
 const orientation = screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> };
@@ -51,7 +52,9 @@ const screenEl = $('screen');
 const host = $('app');
 const progress = new Progress(localStore);
 let theme = themeById(localStore.get('theme', 'neon'));
+let atomStyle: AtomStyle = atomStyleById(localStore.get('atomStyle', 'soft'));
 const renderer = await NeonRenderer.create(host, theme);
+renderer.setAtomStyle(atomStyle);
 
 /** Applies a colour theme to the board (renderer) and to the menus and HUD (CSS variables). */
 function applyTheme(t: Theme): void {
@@ -71,7 +74,7 @@ const prefsStore = {
 };
 const haptics = new Haptics(prefsStore.haptics);
 const savePrefs = () => localStore.set('prefs', { haptics: haptics.enabled, speed: prefsStore.speed, mode: prefsStore.mode });
-const prefs = (): Prefs => ({ ...audio.settings, haptics: haptics.enabled, speed: prefsStore.speed, theme: theme.id, mode: prefsStore.mode });
+const prefs = (): Prefs => ({ ...audio.settings, haptics: haptics.enabled, speed: prefsStore.speed, theme: theme.id, atomStyle, mode: prefsStore.mode });
 
 // Audio unlock: browsers only allow sound after a user gesture, so start it on the first tap or click.
 window.addEventListener('pointerdown', () => audio.unlock(), { capture: true });
@@ -134,10 +137,34 @@ function showScores(tab: GameModeId): void {
   draw();
 }
 
+/** Which page of atom styles Settings shows; it opens on the page holding the current style. */
+let atomPage = 0;
+const atomPages = Math.ceil(ATOM_STYLES.length / ATOM_PAGE_SIZE);
+/** Created the first time Settings opens: it needs its own small WebGL context. */
+let atomPreview: Promise<AtomPreview> | null = null;
+
 function showSettings(): void {
   const from = mode === 'paused' ? 'pause' : 'menu';
-  const draw = () => showScreen(settingsScreen(prefs(), haptics.supported, from), 'page', draw);
+  atomPage = Math.floor(ATOM_STYLES.findIndex((s) => s.id === atomStyle) / ATOM_PAGE_SIZE);
+  const draw = () => {
+    showScreen(settingsScreen(prefs(), haptics.supported, from, atomPage), 'page', draw);
+    void showAtomPreviews();
+  };
   draw();
+}
+
+/** Fills the atom tiles in Settings with live previews drawn by the game's own atom painter. */
+async function showAtomPreviews(): Promise<void> {
+  const canvases = [...screenEl.querySelectorAll<HTMLCanvasElement>('canvas[data-atom-preview]')];
+  if (!canvases.length) return;
+  atomPreview ??= AtomPreview.create();
+  const preview = await atomPreview;
+  // The screen may have been redrawn while the preview was being created.
+  if (!canvases.every((c) => c.isConnected)) return;
+  preview.attach(
+    canvases.map((canvas) => ({ canvas, style: atomStyleById(canvas.dataset.atomPreview!) })),
+    theme,
+  );
 }
 
 function showPause(): void {
@@ -216,6 +243,20 @@ screenEl.addEventListener('click', (e) => {
       return showSettings();
     case 'pause-menu':
       return showPause();
+    case 'atom':
+      atomStyle = atomStyleById(arg);
+      renderer.setAtomStyle(atomStyle);
+      localStore.set('atomStyle', atomStyle);
+      // Only move the highlight: redrawing would restart the live previews.
+      for (const b of screenEl.querySelectorAll<HTMLElement>('[data-action^="atom:"]')) {
+        const on = b.dataset.action === `atom:${atomStyle}`;
+        b.classList.toggle('selected', on);
+        b.setAttribute('aria-checked', String(on));
+      }
+      return;
+    case 'atoms-page':
+      atomPage = (atomPage + Number(arg) + atomPages) % atomPages;
+      return redrawSettings();
     case 'theme':
       applyTheme(themeById(arg));
       localStore.set('theme', theme.id);
@@ -392,9 +433,29 @@ function updateHud(): void {
   hud.timeBar.style.width = `${s ? (100 * time) / s.rules.timeLimit : 0}%`;
   hud.timeBar.classList.toggle('low', !!s && time <= s.rules.timeWarningAt);
   hud.pause.hidden = mode !== 'playing' && mode !== 'paused';
+  // Offer a new version only between runs, so reloading never throws away a game in progress.
+  updateEl.hidden = !updateReady || (mode !== 'menu' && mode !== 'over');
 }
 
+// A new deploy is downloaded in the background; the player chooses when to switch to it.
+const updateEl = $('update');
+let updateReady = false;
+const updateSW = registerSW({
+  immediate: true,
+  onNeedRefresh: () => (updateReady = true),
+  // The browser only checks for a new version when the game is opened, so also check hourly while it stays open.
+  onRegisteredSW: (_url, registration) => registration && setInterval(() => registration.update(), 60 * 60 * 1000),
+});
+updateEl.addEventListener('click', (e) => {
+  const action = (e.target as HTMLElement).closest<HTMLElement>('[data-action]')?.dataset.action;
+  if (action === 'update') void updateSW(true);
+  else if (action === 'later') updateReady = false;
+});
+
 // Dev-only hook for inspecting the running game from the browser console.
-if (import.meta.env.DEV) Object.defineProperty(window, 'atomTrap', { get: () => ({ run, mode, layout, progress, renderer, audio, haptics, applyTheme }) });
+if (import.meta.env.DEV) Object.defineProperty(window, 'atomTrap', {
+    // `fakeUpdate()` shows the new-version bar, since the dev server has no service worker.
+    get: () => ({ run, mode, layout, progress, renderer, audio, haptics, applyTheme, fakeUpdate: () => (updateReady = true) }),
+  });
 
 showMenu();
