@@ -11,6 +11,8 @@ import type { Simulation } from '../sim/simulation';
  * adjust them from real play.
  */
 export interface Puzzle {
+  /** Stable id: saved progress is keyed by it, so puzzles can be reordered or added. */
+  id: string;
   name: string;
   layout?: string;
   atoms: number;
@@ -21,19 +23,20 @@ export interface Puzzle {
 
 export const PUZZLE_LIVES = 3;
 
+/** In order of difficulty, from the tuning bot's results (expert walls, then casual clear rate). */
 export const PUZZLES: Puzzle[] = [
-  { name: 'First trap', atoms: 2, par: [3, 6], seed: 101 },
-  { name: 'Pillars', layout: 'pillars', atoms: 2, par: [4, 9], seed: 102 },
-  { name: 'Two rooms', layout: 'rooms', atoms: 2, par: [5, 8], seed: 103 },
-  { name: 'Crossroads', layout: 'cross', atoms: 3, par: [6, 11], seed: 104 },
-  { name: 'Picture frame', layout: 'frame', atoms: 3, par: [7, 13], seed: 105 },
-  { name: 'Teeth', layout: 'teeth', atoms: 3, par: [3, 8], seed: 106 },
-  { name: 'Diamond', layout: 'diamond', atoms: 3, par: [6, 12], seed: 107 },
-  { name: 'Crowded pillars', layout: 'pillars', atoms: 4, par: [9, 15], seed: 108 },
-  { name: 'Busy crossing', layout: 'cross', atoms: 4, par: [8, 13], seed: 109 },
-  { name: 'Room service', layout: 'rooms', atoms: 4, par: [8, 14], seed: 110 },
-  { name: 'Full frame', layout: 'frame', atoms: 5, par: [10, 18], seed: 111 },
-  { name: 'Shark', layout: 'teeth', atoms: 5, par: [9, 17], seed: 112 },
+  { id: 'first-trap', name: 'First trap', atoms: 2, par: [3, 6], seed: 101 },
+  { id: 'pillars', name: 'Pillars', layout: 'pillars', atoms: 2, par: [4, 9], seed: 102 },
+  { id: 'two-rooms', name: 'Two rooms', layout: 'rooms', atoms: 2, par: [5, 8], seed: 103 },
+  { id: 'teeth', name: 'Teeth', layout: 'teeth', atoms: 3, par: [3, 8], seed: 106 },
+  { id: 'crossroads', name: 'Crossroads', layout: 'cross', atoms: 3, par: [6, 11], seed: 104 },
+  { id: 'diamond', name: 'Diamond', layout: 'diamond', atoms: 3, par: [6, 12], seed: 107 },
+  { id: 'picture-frame', name: 'Picture frame', layout: 'frame', atoms: 3, par: [7, 13], seed: 105 },
+  { id: 'busy-crossing', name: 'Busy crossing', layout: 'cross', atoms: 4, par: [8, 13], seed: 109 },
+  { id: 'room-service', name: 'Room service', layout: 'rooms', atoms: 4, par: [8, 14], seed: 110 },
+  { id: 'crowded-pillars', name: 'Crowded pillars', layout: 'pillars', atoms: 4, par: [9, 15], seed: 108 },
+  { id: 'shark', name: 'Shark', layout: 'teeth', atoms: 5, par: [9, 17], seed: 112 },
+  { id: 'full-frame', name: 'Full frame', layout: 'frame', atoms: 5, par: [10, 18], seed: 111 },
 ];
 
 export const MAX_STARS = PUZZLES.length * 3;
@@ -58,14 +61,26 @@ export function starsFor(p: Puzzle, wallsUsed: number): number {
   return wallsUsed <= p.par[1] ? 2 : 1;
 }
 
-/** Best results per puzzle, kept by position in PUZZLES. */
-export class PuzzleProgress {
-  constructor(private readonly store: KeyValueStore) {}
+/** The first release kept best walls in an array in this puzzle order; read once to carry them over. */
+const FIRST_ORDER = ['first-trap', 'pillars', 'two-rooms', 'crossroads', 'picture-frame', 'teeth', 'diamond', 'crowded-pillars', 'busy-crossing', 'room-service', 'full-frame', 'shark'];
 
-  /** Fewest walls each puzzle has been cleared in, or null if not yet cleared. */
+/** Best results per puzzle, saved by puzzle id. */
+export class PuzzleProgress {
+  constructor(private readonly store: KeyValueStore) {
+    const old = store.get<(number | null)[] | null>('puzzleWalls', null);
+    if (!old) return;
+    const best: Record<string, number> = {};
+    old.forEach((w, i) => {
+      if (w !== null && FIRST_ORDER[i]) best[FIRST_ORDER[i]] = w;
+    });
+    store.set('puzzleBest', { ...best, ...store.get<Record<string, number>>('puzzleBest', {}) });
+    store.set('puzzleWalls', null);
+  }
+
+  /** Fewest walls each puzzle has been cleared in (in PUZZLES order), or null if not yet cleared. */
   get bestWalls(): (number | null)[] {
-    const saved = this.store.get<(number | null)[]>('puzzleWalls', []);
-    return PUZZLES.map((_, i) => saved[i] ?? null);
+    const saved = this.store.get<Record<string, number>>('puzzleBest', {});
+    return PUZZLES.map((p) => saved[p.id] ?? null);
   }
 
   get stars(): number[] {
@@ -90,11 +105,10 @@ export class PuzzleProgress {
 
   /** Keeps the fewest walls; returns whether this clear beat the earlier best. */
   record(index: number, walls: number): boolean {
-    const all = this.bestWalls;
-    const best = all[index];
-    if (best !== null && walls >= best) return false;
-    all[index] = walls;
-    this.store.set('puzzleWalls', all);
+    const id = PUZZLES[index].id;
+    const saved = this.store.get<Record<string, number>>('puzzleBest', {});
+    if (saved[id] !== undefined && walls >= saved[id]) return false;
+    this.store.set('puzzleBest', { ...saved, [id]: walls });
     return true;
   }
 }

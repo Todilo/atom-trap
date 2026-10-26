@@ -32,6 +32,22 @@ describe('Puzzles', () => {
 });
 
 describe('Puzzle progress', () => {
+  it('has a unique id for every puzzle', () => {
+    expect(new Set(PUZZLES.map((p) => p.id)).size).toBe(PUZZLES.length);
+  });
+
+  it('carries progress saved by the first release (by position) over to puzzle ids', () => {
+    const store = memoryStore();
+    // The first release's order: First trap, Pillars, Two rooms, Crossroads, Picture frame, Teeth, ...
+    store.set('puzzleWalls', [4, null, null, null, null, 7]);
+    const progress = new PuzzleProgress(store);
+    const walls = (id: string) => progress.bestWalls[PUZZLES.findIndex((p) => p.id === id)];
+    expect(walls('first-trap')).toBe(4);
+    expect(walls('teeth')).toBe(7);
+    expect(walls('pillars')).toBeNull();
+    expect(store.get('puzzleWalls', 'gone')).toBeNull();
+  });
+
   it('opens each puzzle once the one before is cleared, and keeps the fewest walls', () => {
     const progress = new PuzzleProgress(memoryStore());
     const p = PUZZLES[0];
