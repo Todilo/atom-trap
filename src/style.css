@@ -34,7 +34,8 @@ body {
 }
 
 #board {
-  width: min(96vw, calc(92vh * var(--board-ratio)));
+  /* Dynamic viewport units, so the board fits under the browser's address bar too. */
+  width: min(96dvw, calc(92dvh * var(--board-ratio)));
   aspect-ratio: 448 / 240;
   background-color: var(--board);
   background-image:

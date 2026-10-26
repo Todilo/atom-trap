@@ -117,6 +117,14 @@ These are possible later modes (ADR-0002).
 
 ---
 
+## Implementation choices (M1)
+
+Details the original's code doesn't pin down clearly, decided in `src/sim/simulation.ts`:
+
+- **Step order:** apply a queued click, grow each wall half, move atoms in order, check breaks, tick the timer, check level clear.
+- **A half blocked by an atom or by another growing half** waits that step instead of completing.
+- **Regions that still hold a growing half are never filled**: the half has nothing to anchor to yet. They're checked again when it completes.
+
 ## Still open
 
 1. **Atom starting placement.** Not traced in the code. Random placement (one atom per cell) is close enough.
