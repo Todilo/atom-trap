@@ -112,6 +112,8 @@ export class NeonRenderer {
     const app = new Application();
     await app.init({
       resizeTo: host,
+      // Input is handled by src/game/input.ts. Pixi's own pointer handling would only reset the cursor.
+      eventFeatures: { move: false, globalMove: false, click: false, wheel: false },
       background: C.background,
       antialias: true,
       resolution: Math.min(window.devicePixelRatio || 1, 2),

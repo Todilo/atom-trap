@@ -33,8 +33,7 @@ export interface InputHandlers {
 }
 
 export class PointerInput {
-  /** The mouse's current wall orientation; each level starts on vertical, as in the original. */
-  mouseOrientation: Orientation = 'vertical';
+  private orientation: Orientation = 'vertical';
   private touches = new Map<number, { x: number; y: number; placed: boolean }>();
 
   constructor(
@@ -49,6 +48,16 @@ export class PointerInput {
     this.updateCursor();
   }
 
+  /** The mouse's current wall orientation; each level starts on vertical, as in the original. */
+  get mouseOrientation(): Orientation {
+    return this.orientation;
+  }
+
+  set mouseOrientation(o: Orientation) {
+    this.orientation = o;
+    this.updateCursor();
+  }
+
   private local(e: PointerEvent): { x: number; y: number } {
     const r = this.el.getBoundingClientRect();
     return toLocal(e.clientX, e.clientY, r, portrait?.matches ?? false);
@@ -59,7 +68,6 @@ export class PointerInput {
     if (e.pointerType === 'mouse') {
       if (e.button === 2) {
         this.mouseOrientation = this.mouseOrientation === 'vertical' ? 'horizontal' : 'vertical';
-        this.updateCursor();
       } else if (e.button === 0 && !this.handlers.tap?.()) {
         this.handlers.place(p.x, p.y, this.mouseOrientation);
       }
@@ -94,7 +102,9 @@ export class PointerInput {
     this.touches.delete(e.pointerId);
   };
 
+  /** The cursor is a CSS class (see style.css), so nothing else writing the inline cursor can override it. */
   private updateCursor(): void {
-    this.el.style.cursor = this.mouseOrientation === 'vertical' ? 'ns-resize' : 'ew-resize';
+    this.el.classList.toggle('cursor-vertical', this.orientation === 'vertical');
+    this.el.classList.toggle('cursor-horizontal', this.orientation === 'horizontal');
   }
 }
