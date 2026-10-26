@@ -121,7 +121,8 @@ These are possible later modes (ADR-0002).
 
 Details the original's code doesn't pin down clearly, decided in `src/sim/simulation.ts`:
 
-- **Step order:** apply a queued click, grow each wall half, move atoms in order, check breaks, tick the timer, check level clear.
+- **Step order:** apply a queued click, grow each wall half, decide every atom's bounce on the same positions, then move all atoms (the original's two phases), check breaks, tick the timer, check level clear. If two atoms aim at the same cell, the first in order takes it and the other waits a step.
+- **Collision look:** collisions resolve between neighbouring cells, as in the original. The renderer draws atoms a full cell high and animates each atom–atom bounce so the two bodies visibly touch.
 - **A half blocked by an atom or by another growing half** waits that step instead of completing.
 - **Regions that still hold a growing half are never filled**: the half has nothing to anchor to yet. They're checked again when it completes.
 

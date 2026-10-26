@@ -46,6 +46,23 @@ function glowTexture(size = 64): Texture {
   return Texture.from(canvas);
 }
 
+/** The atom's body: a solid magenta orb with a hot white centre and a thin soft rim. */
+function orbTexture(size = 64): Texture {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const r = size / 2;
+  const g = ctx.createRadialGradient(r * 0.8, r * 0.8, 0, r, r, r);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.3, 'rgba(255,170,235,1)');
+  g.addColorStop(0.78, 'rgba(255,64,200,1)');
+  g.addColorStop(0.87, 'rgba(255,64,200,0.5)');
+  g.addColorStop(1, 'rgba(255,64,200,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  return Texture.from(canvas);
+}
+
 export class NeonRenderer {
   private readonly bg = new Graphics();
   private readonly removed = new Graphics();
@@ -56,6 +73,7 @@ export class NeonRenderer {
   private readonly fxLayer = new Container();
   private readonly flash = new Graphics();
   private readonly glow = glowTexture();
+  private readonly orb = orbTexture();
 
   private layout: BoardLayout | null = null;
   private sim: Simulation | null = null;
@@ -175,6 +193,8 @@ export class NeonRenderer {
       this.trails.push([]);
       const glow = this.makeSprite(C.magenta);
       const core = this.makeSprite(0xffffff);
+      core.texture = this.orb;
+      core.blendMode = 'normal';
       this.atomSprites.push(glow);
       this.coreSprites.push(core);
       this.atomLayer.addChild(glow, core);
@@ -326,16 +346,38 @@ export class NeonRenderer {
   private drawAtoms(sim: Simulation, previous: Atom[], alpha: number): void {
     const l = this.layout!;
     const unit = Math.min(l.cellW, l.cellH);
+    // The atom's solid body fills a cell's height, as in the original, so neighbours look touching.
+    const diameter = unit;
+    const px = (cx: number) => l.x + (cx + 0.5) * l.cellW;
+    const py = (cy: number) => l.y + (cy + 0.5) * l.cellH;
+    const contacts = sim.atoms.map((atom, i) => this.contactOffset(previous[i] ?? atom, previous, i, diameter));
+    // A bounce also redirects the atom it hit; animate that one towards the contact too, so both meet.
+    contacts.forEach((c, i) => {
+      if (c?.mirror && !contacts[c.partner]) contacts[c.partner] = { x: -c.x, y: -c.y, partner: i, mirror: false };
+    });
     sim.atoms.forEach((atom, i) => {
       const p = previous[i] ?? atom;
-      const x = l.x + (p.x + (atom.x - p.x) * alpha + 0.5) * l.cellW;
-      const y = l.y + (p.y + (atom.y - p.y) * alpha + 0.5) * l.cellH;
+      let x: number;
+      let y: number;
+      const contact = contacts[i];
+      if (contact) {
+        // Bounced off another atom this step: keep travelling until the bodies touch, then come back.
+        const half = alpha < 0.5;
+        const k = half ? alpha / 0.5 : (alpha - 0.5) / 0.5;
+        const mx = px(p.x) + contact.x;
+        const my = py(p.y) + contact.y;
+        x = half ? px(p.x) + contact.x * k : mx + (px(atom.x) - mx) * k;
+        y = half ? py(p.y) + contact.y * k : my + (py(atom.y) - my) * k;
+      } else {
+        x = px(p.x) + (px(atom.x) - px(p.x)) * alpha;
+        y = py(p.y) + (py(atom.y) - py(p.y)) * alpha;
+      }
       const glow = this.atomSprites[i];
       glow.position.set(x, y);
-      glow.scale.set((unit * 2.6) / 64);
+      glow.scale.set((diameter * 3.2) / 64);
       const core = this.coreSprites[i];
       core.position.set(x, y);
-      core.scale.set((unit * 0.9) / 64);
+      core.scale.set((diameter * 1.15) / 64);
 
       const trail = this.trails[i];
       const last = trail[0];
@@ -353,6 +395,36 @@ export class NeonRenderer {
         s.alpha = 0.35 * k;
       });
     });
+  }
+
+  /**
+   * If atom `i` bounced off, or was held up by, a neighbouring atom this step, the pixel offset that
+   * brings the two bodies into contact. The simulation resolves collisions between neighbouring cells,
+   * as the original does; this only makes them look like a touch.
+   */
+  private contactOffset(p: Atom, previous: Atom[], i: number, diameter: number): { x: number; y: number; partner: number; mirror: boolean } | null {
+    const atoms = this.sim!.atoms;
+    const now = atoms[i];
+    const bounced = now.dx !== p.dx || now.dy !== p.dy;
+    // An atom that held still was blocked; if by an atom, that one has just moved into its path.
+    const stalled = !bounced && now.x === p.x && now.y === p.y;
+    if (!bounced && !stalled) return null;
+    const others = bounced ? previous : atoms;
+    const l = this.layout!;
+    for (let j = 0; j < others.length; j++) {
+      if (j === i) continue;
+      const o = others[j];
+      const ox = o.x - p.x;
+      const oy = o.y - p.y;
+      const ahead = (ox === p.dx && oy === 0) || (ox === 0 && oy === p.dy) || (ox === p.dx && oy === p.dy);
+      if (!ahead) continue;
+      const vx = ox * l.cellW;
+      const vy = oy * l.cellH;
+      const dist = Math.hypot(vx, vy);
+      const travel = Math.max(0, (dist - diameter) / 2);
+      return { x: (vx / dist) * travel, y: (vy / dist) * travel, partner: j, mirror: bounced };
+    }
+    return null;
   }
 
   private burst(cx: number, cy: number, color: number, count: number, speed: number): void {

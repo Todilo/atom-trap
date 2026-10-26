@@ -12,16 +12,44 @@ export interface AudioSettings {
 
 const midi = (n: number) => 440 * 2 ** ((n - 69) / 12);
 
-/** Am – F – C – G, one bar each (MIDI notes); the loop's harmony. */
-const CHORDS = [
-  { root: 45, notes: [57, 60, 64] },
-  { root: 41, notes: [53, 57, 60] },
-  { root: 48, notes: [52, 55, 60] },
-  { root: 43, notes: [55, 59, 62] },
+interface Chord {
+  root: number;
+  notes: [number, number, number];
+}
+
+/** Chords in A minor (MIDI notes: bass root and a three-note voicing). */
+const Am: Chord = { root: 45, notes: [57, 60, 64] };
+const F: Chord = { root: 41, notes: [53, 57, 60] };
+const C: Chord = { root: 48, notes: [52, 55, 60] };
+const G: Chord = { root: 43, notes: [55, 59, 62] };
+const Dm: Chord = { root: 38, notes: [57, 62, 65] };
+const Em: Chord = { root: 40, notes: [55, 59, 64] };
+const E: Chord = { root: 40, notes: [56, 59, 64] };
+
+/**
+ * One section of the song: 8 bars of chords plus how each part plays over them.
+ * `arp` lists chord-note indexes per eighth note (-1 = rest); `bass` is the bass step interval in sixteenths.
+ */
+interface Section {
+  chords: Chord[];
+  arp: number[];
+  arpOctave: number;
+  bass: number;
+  pad: boolean;
+  lead: boolean;
+}
+
+/** About 77 s (32 bars) before it repeats, moving between four moods instead of one 4-bar loop. */
+const SONG: Section[] = [
+  { chords: [Am, F, C, G, Am, F, C, G], arp: [0, 1, 2, 1, 0, 2, 1, 2], arpOctave: 12, bass: 4, pad: true, lead: false },
+  { chords: [F, G, Am, Am, F, G, C, E], arp: [0, 1, 2, 0, 1, 2, 0, 2], arpOctave: 12, bass: 2, pad: true, lead: false },
+  { chords: [Dm, Am, F, G, Dm, Am, Em, E], arp: [2, -1, -1, 1, -1, -1, 0, -1], arpOctave: 24, bass: 16, pad: true, lead: true },
+  { chords: [Am, F, C, G, Am, F, G, E], arp: [0, 2, 1, 2, 0, 2, 1, 0], arpOctave: 12, bass: 2, pad: true, lead: true },
 ];
+const BAR_STEPS = 16;
+const SONG_STEPS = SONG.reduce((n, s) => n + s.chords.length * BAR_STEPS, 0);
 const BPM = 100;
 const SIXTEENTH = 60 / BPM / 4;
-const ARP_PATTERN = [0, 1, 2, 1, 0, 2, 1, 2];
 
 export class AudioEngine {
   private ctx: AudioContext | null = null;
@@ -91,8 +119,10 @@ export class AudioEngine {
       case 'cells-removed':
         return this.whoosh(Math.min(1, 0.35 + e.count / 200));
       case 'wall-broken':
-        this.burst(0.18, 0.4, 3000);
-        return this.tone({ freq: 90, to: 40, dur: 0.35, type: 'sine', vol: 0.5 });
+        // A soft shatter: muted noise, a few glassy pings and a low thud (no harsh high crack).
+        this.burst(0.14, 0.1, 1800);
+        [1760, 1397, 1047].forEach((f, i) => this.tone({ freq: f, to: f * 0.8, dur: 0.16, type: 'triangle', vol: 0.035, delay: 0.02 + i * 0.035 }));
+        return this.tone({ freq: 90, to: 45, dur: 0.3, type: 'sine', vol: 0.3 });
       case 'life-lost':
         return this.tone({ freq: 330, to: 165, dur: 0.4, type: 'sawtooth', vol: 0.07, delay: 0.08, filter: 1200 });
       case 'time-warning':
@@ -185,15 +215,16 @@ export class AudioEngine {
     src.stop(t + 0.6);
   }
 
-  /** Short bright noise crack. */
+  /** Short band-limited noise burst around `freq`. */
   private burst(dur: number, vol: number, freq: number): void {
     const ctx = this.ctx!;
     const t = ctx.currentTime;
     const src = ctx.createBufferSource();
     src.buffer = this.noise;
     const f = ctx.createBiquadFilter();
-    f.type = 'highpass';
+    f.type = 'bandpass';
     f.frequency.value = freq;
+    f.Q.value = 0.8;
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(vol, t);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
@@ -223,15 +254,24 @@ export class AudioEngine {
     if (this.nextStepTime < ctx.currentTime) this.nextStepTime = ctx.currentTime + 0.05;
     while (this.nextStepTime < ctx.currentTime + 0.4) {
       this.musicStep(this.step, this.nextStepTime);
-      this.step = (this.step + 1) % (16 * CHORDS.length);
+      this.step = (this.step + 1) % SONG_STEPS;
       this.nextStepTime += SIXTEENTH;
     }
   }
 
   private musicStep(step: number, t: number): void {
     const ctx = this.ctx!;
-    const chord = CHORDS[Math.floor(step / 16)];
-    const inBar = step % 16;
+    let bar = Math.floor(step / BAR_STEPS);
+    let section = SONG[0];
+    for (const s of SONG) {
+      if (bar < s.chords.length) {
+        section = s;
+        break;
+      }
+      bar -= s.chords.length;
+    }
+    const chord = section.chords[bar];
+    const inBar = step % BAR_STEPS;
     const voice = (freq: number, type: OscillatorType, start: number, attack: number, hold: number, release: number, vol: number, cutoff: number, out: AudioNode, detune = 0) => {
       const osc = ctx.createOscillator();
       osc.type = type;
@@ -249,19 +289,33 @@ export class AudioEngine {
       osc.start(start);
       osc.stop(start + attack + hold + release + 0.05);
     };
-    const bar = SIXTEENTH * 16;
-    if (inBar === 0) {
+    const barLength = SIXTEENTH * BAR_STEPS;
+    if (inBar === 0 && section.pad) {
       // Pad: detuned saws, slow attack, held for the bar.
       for (const n of chord.notes) {
-        voice(midi(n), 'sawtooth', t, 0.6, bar - 0.6, 0.9, 0.022, 900, this.musicBus, -8);
-        voice(midi(n), 'sawtooth', t, 0.6, bar - 0.6, 0.9, 0.022, 900, this.musicBus, 8);
+        voice(midi(n), 'sawtooth', t, 0.6, barLength - 0.6, 0.9, 0.022, 900, this.musicBus, -8);
+        voice(midi(n), 'sawtooth', t, 0.6, barLength - 0.6, 0.9, 0.022, 900, this.musicBus, 8);
       }
     }
-    if (inBar % 4 === 0) voice(midi(chord.root), 'sine', t, 0.01, SIXTEENTH * 2, 0.25, 0.16, 400, this.musicBus);
+    if (inBar % section.bass === 0) {
+      const hold = Math.min(section.bass, 4) * SIXTEENTH;
+      voice(midi(chord.root), 'sine', t, 0.01, hold * 0.6, 0.25, 0.16, 400, this.musicBus);
+    }
     if (inBar % 2 === 0) {
-      const note = chord.notes[ARP_PATTERN[(inBar / 2) % ARP_PATTERN.length]] + 12;
-      voice(midi(note), 'triangle', t, 0.005, 0.03, 0.12, 0.05, 3000, this.musicBus);
-      voice(midi(note), 'triangle', t, 0.005, 0.03, 0.12, 0.03, 3000, this.echo);
+      const idx = section.arp[(inBar / 2) % section.arp.length];
+      if (idx >= 0) {
+        const note = chord.notes[idx] + section.arpOctave;
+        voice(midi(note), 'triangle', t, 0.005, 0.03, 0.12, 0.05, 3000, this.musicBus);
+        voice(midi(note), 'triangle', t, 0.005, 0.03, 0.12, 0.03, 3000, this.echo);
+      }
+    }
+    // Lead: a slow melody over the chord tones, alternating its shape every other bar.
+    if (section.lead && (inBar === 0 || inBar === 6 || inBar === 10)) {
+      const shape = bar % 2 === 0 ? [2, 1, 0] : [1, 2, 2];
+      const note = chord.notes[shape[inBar === 0 ? 0 : inBar === 6 ? 1 : 2]] + 12;
+      const hold = inBar === 0 ? SIXTEENTH * 5 : SIXTEENTH * 3;
+      voice(midi(note), 'square', t, 0.03, hold, 0.4, 0.025, 1800, this.musicBus);
+      voice(midi(note), 'square', t, 0.03, hold, 0.4, 0.018, 1800, this.echo);
     }
   }
 }

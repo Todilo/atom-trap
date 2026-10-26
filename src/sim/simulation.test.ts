@@ -62,6 +62,23 @@ describe('Atoms', () => {
     expect(sim.atoms[1]).toEqual({ x: 7, y: 6, dx: 1, dy: 1 });
   });
 
+  it('decide bounces on the same positions, so atoms two cells apart don’t bounce early', () => {
+    const sim = new Simulation(level1, {
+      atoms: [
+        { x: 10, y: 10, dx: 1, dy: 1 },
+        { x: 12, y: 10, dx: -1, dy: 1 },
+      ],
+    });
+    sim.step();
+    // Both aimed at (11, 11): the first takes it, the second waits without bouncing.
+    expect(sim.atoms[0]).toEqual({ x: 11, y: 11, dx: 1, dy: 1 });
+    expect(sim.atoms[1]).toEqual({ x: 12, y: 10, dx: -1, dy: 1 });
+    sim.step();
+    // Now neighbours: they bounce apart.
+    expect(sim.atoms[0]).toEqual({ x: 10, y: 12, dx: -1, dy: 1 });
+    expect(sim.atoms[1]).toEqual({ x: 13, y: 9, dx: 1, dy: -1 });
+  });
+
   it('never share a cell', () => {
     const sim = new Simulation(classicRuleset(30), { seed: 7 });
     for (let i = 0; i < 500; i++) {

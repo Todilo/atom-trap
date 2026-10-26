@@ -96,6 +96,8 @@ export class Simulation {
 
     this.applyQueuedWall(events);
     for (const slot of ['a', 'b'] as const) this.advanceHalf(slot, events);
+    // Like the original's two phases: every atom decides its bounce on the same positions, then all move.
+    for (let i = 0; i < this.atoms.length; i++) this.bounceAtom(i);
     for (let i = 0; i < this.atoms.length; i++) this.moveAtom(i);
     this.checkBreaks(events);
 
@@ -200,10 +202,10 @@ export class Simulation {
   }
 
   /**
-   * Bounce, then move one cell diagonally. A neighbouring atom in the way takes over this atom's
-   * direction on that axis, and this atom reflects as if it hit a wall (from the original's code).
+   * A neighbouring atom in the way takes over this atom's direction on that axis, and this atom
+   * reflects as if it hit a wall (from the original's code).
    */
-  private moveAtom(i: number): void {
+  private bounceAtom(i: number): void {
     const a = this.atoms[i];
     const { dx, dy } = a;
     const h = this.atomAt(a.x + dx, a.y);
@@ -223,6 +225,11 @@ export class Simulation {
       a.dx = -dx;
       a.dy = -dy;
     }
+  }
+
+  /** Move one cell diagonally, unless the target cell has been taken or is blocked. */
+  private moveAtom(i: number): void {
+    const a = this.atoms[i];
     const tx = a.x + a.dx;
     const ty = a.y + a.dy;
     if (!this.isFree(tx, ty)) return;
