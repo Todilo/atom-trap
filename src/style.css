@@ -1,11 +1,8 @@
 :root {
   --bg: #05060f;
-  --board: #0b0e22;
-  --grid: rgba(80, 220, 255, 0.08);
-  --edge: #3ee8ff;
   --text: #cfe9ff;
-  /* Original board: 28 × 20 cells of 16 × 12 px (ADR-0009). */
-  --board-ratio: calc(448 / 240);
+  --accent: #3ee8ff;
+  --hud-height: 32px;
 }
 
 * {
@@ -25,25 +22,52 @@ body {
   -webkit-user-select: none;
 }
 
+#hud {
+  position: fixed;
+  top: env(safe-area-inset-top);
+  left: env(safe-area-inset-left);
+  right: env(safe-area-inset-right);
+  height: var(--hud-height);
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+#hud b {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Dynamic viewport units, so the game fits under the browser's address bar too. */
 #app {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + var(--hud-height));
+  left: env(safe-area-inset-left);
+  right: env(safe-area-inset-right);
+  bottom: env(safe-area-inset-bottom);
+}
+
+#app canvas {
+  display: block;
+}
+
+#message {
   position: fixed;
   inset: 0;
   display: grid;
   place-items: center;
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  pointer-events: none;
+  text-align: center;
+  font-size: 20px;
+  line-height: 1.5;
+  text-shadow: 0 0 8px var(--bg), 0 0 16px var(--bg);
 }
 
-#board {
-  /* Dynamic viewport units, so the board fits under the browser's address bar too. */
-  width: min(96dvw, calc(92dvh * var(--board-ratio)));
-  aspect-ratio: 448 / 240;
-  background-color: var(--board);
-  background-image:
-    linear-gradient(to right, var(--grid) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
-  background-size: calc(100% / 28) calc(100% / 20);
-  border: 2px solid var(--edge);
-  box-shadow: 0 0 12px var(--edge), inset 0 0 12px rgba(62, 232, 255, 0.35);
+#message[hidden] {
+  display: none;
 }
 
 #rotate {

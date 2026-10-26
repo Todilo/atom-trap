@@ -10,9 +10,14 @@
     <title>Atom Trap</title>
   </head>
   <body>
-    <main id="app">
-      <div id="board" aria-label="Game board"></div>
-    </main>
+    <header id="hud" aria-live="off">
+      <span>Lives <b id="hud-lives">0</b></span>
+      <span>Cleared <b id="hud-coverage">0%</b></span>
+      <span>Score <b id="hud-score">0</b></span>
+      <span>Time <b id="hud-time">0</b></span>
+    </header>
+    <main id="app"></main>
+    <div id="message" hidden></div>
     <div id="rotate" role="alert">
       <p>Rotate your device to landscape</p>
     </div>
