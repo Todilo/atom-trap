@@ -4,11 +4,12 @@ import { PointerInput } from './game/input';
 import { cellAt, layoutBoard } from './game/layout';
 import { Progress, Run, type RunKind } from './game/run';
 import { NeonRenderer } from './render/neonRenderer';
+import { AudioEngine, type AudioSettings } from './shell/audio';
 import { gameOverScreen, highScoresScreen, levelClearedScreen, pauseScreen, titleScreen } from './shell/screens';
 import { localStore } from './shell/storage';
 import type { Atom, Simulation } from './sim/simulation';
 
-// The complete Classic game (ADR-0010) with the neon look (ADR-0004).
+// The complete Classic game (ADR-0010) with the neon look (ADR-0004) and synth audio (ADR-0008).
 registerSW({ immediate: true });
 
 // Best effort only: browsers allow the orientation lock just in fullscreen / installed mode.
@@ -29,6 +30,11 @@ const screenEl = $('screen');
 const host = $('app');
 const renderer = await NeonRenderer.create(host);
 const progress = new Progress(localStore);
+const audio = new AudioEngine(localStore.get<AudioSettings>('audio', { music: true, sfx: true }));
+const saveAudio = () => localStore.set('audio', audio.settings);
+
+// Audio unlock: browsers only allow sound after a user gesture, so start it on the first tap or click.
+window.addEventListener('pointerdown', () => audio.unlock(), { capture: true });
 
 /**
  * Shell states: `menu` (title / high scores, board idle behind), `playing`, `paused`,
@@ -53,7 +59,7 @@ function showScreen(html: string | null): void {
 
 function showMenu(): void {
   mode = 'menu';
-  showScreen(titleScreen(progress.highestLevel));
+  showScreen(titleScreen(progress.highestLevel, audio.settings));
 }
 
 function startRun(kind: RunKind): void {
@@ -72,7 +78,7 @@ function beginLevel(): void {
 function pause(): void {
   if (mode !== 'playing') return;
   mode = 'paused';
-  showScreen(pauseScreen());
+  showScreen(pauseScreen(audio.settings));
 }
 
 function resume(): void {
@@ -99,6 +105,14 @@ screenEl.addEventListener('click', (e) => {
       return showMenu();
     case 'resume':
       return resume();
+    case 'toggle-music':
+      audio.setMusic(!audio.settings.music);
+      saveAudio();
+      return showScreen(mode === 'paused' ? pauseScreen(audio.settings) : titleScreen(progress.highestLevel, audio.settings));
+    case 'toggle-sfx':
+      audio.setSfx(!audio.settings.sfx);
+      saveAudio();
+      return showScreen(mode === 'paused' ? pauseScreen(audio.settings) : titleScreen(progress.highestLevel, audio.settings));
     case 'quit':
       run = null;
       return showMenu();
@@ -134,11 +148,17 @@ const input = new PointerInput(renderer.canvas, {
 
 // Auto-pause when the app goes to the background; the player resumes it (ADR-0008).
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) pause();
+  if (document.hidden) {
+    pause();
+    audio.suspend();
+  } else {
+    audio.resume();
+  }
 });
 
 function handleStepEvents(s: Simulation): void {
   for (const e of s.step()) {
+    audio.event(e);
     if (e.type === 'level-cleared') {
       mode = 'cleared';
       showScreen(levelClearedScreen(run!.level, e.bonus, run!.score, run!.kind === 'scored'));
@@ -162,6 +182,8 @@ renderer.app.ticker.add((ticker) => {
   }
   renderer.draw(s, previous, s && mode === 'playing' ? accumulator / s.rules.stepMs : 1);
   updateHud();
+  const growing = mode === 'playing' && s ? (s.halves.a?.cells.length ?? 0) + (s.halves.b?.cells.length ?? 0) : 0;
+  audio.setGrowing(growing);
 });
 
 function updateHud(): void {
@@ -176,6 +198,6 @@ function updateHud(): void {
 }
 
 // Dev-only hook for inspecting the running game from the browser console.
-if (import.meta.env.DEV) Object.defineProperty(window, 'atomTrap', { get: () => ({ run, mode, layout, progress, renderer }) });
+if (import.meta.env.DEV) Object.defineProperty(window, 'atomTrap', { get: () => ({ run, mode, layout, progress, renderer, audio }) });
 
 showMenu();

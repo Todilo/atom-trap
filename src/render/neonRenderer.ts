@@ -84,6 +84,7 @@ export class NeonRenderer {
     app.stage.addChild(this.bg, this.removed, this.edges, this.walls, this.trailLayer, this.atomLayer, this.fxLayer, this.flash);
     for (let i = 0; i < 2; i++) {
       const tip = this.makeSprite(C.hot);
+      tip.visible = false;
       this.tipSprites.push(tip);
       this.fxLayer.addChild(tip);
     }
@@ -140,6 +141,7 @@ export class NeonRenderer {
       this.removed.clear();
       this.edges.clear();
       this.walls.clear();
+      for (const tip of this.tipSprites) tip.visible = false;
       this.edgesDirty = true;
       this.drawBoardEdge();
     }

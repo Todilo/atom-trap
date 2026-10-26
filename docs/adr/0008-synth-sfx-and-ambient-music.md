@@ -18,5 +18,5 @@ The original had a few simple beeps and no music. The neon visual direction (ADR
 ## Consequences
 
 - Audio lives entirely in the shell and reacts to game events. The simulation stays silent and testable.
-- The music file is cached for offline play by the service worker. Keep it small (a few hundred KB, compressed).
+- *Implementation (M5):* both the music and the effects are **synthesised at runtime** with the Web Audio API (`src/shell/audio.ts`). That's the "generated" option: there's no audio file to license, download or cache, and it works offline.
 - Adaptive music (layers that react to coverage and time) is possible later on top of the same events, but is out of scope for v1.

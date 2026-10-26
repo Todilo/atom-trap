@@ -1,4 +1,5 @@
 import type { HighScore } from '../game/run';
+import type { AudioSettings } from './audio';
 import type { LevelBonus } from '../sim/ruleset';
 
 /**
@@ -10,7 +11,14 @@ const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
 const button = (action: string, label: string, primary = false) =>
   `<button type="button" data-action="${action}" class="${primary ? 'primary' : ''}">${label}</button>`;
 
-export function titleScreen(highestLevel: number): string {
+/** Music and sound switches (ADR-0008). */
+const audioToggles = (a: AudioSettings) => `
+    <div class="buttons toggles">
+      ${button('toggle-music', `Music: ${a.music ? 'On' : 'Off'}`)}
+      ${button('toggle-sfx', `Sound: ${a.sfx ? 'On' : 'Off'}`)}
+    </div>`;
+
+export function titleScreen(highestLevel: number, audio: AudioSettings): string {
   return `
     <h1>Atom Trap</h1>
     <p class="tagline">A neon tribute to JezzBall (1992)</p>
@@ -19,16 +27,18 @@ export function titleScreen(highestLevel: number): string {
       ${highestLevel > 1 ? button('continue', `Continue from level ${highestLevel}`) : ''}
       ${button('scores', 'High scores')}
     </div>
+    ${audioToggles(audio)}
     <p class="hint">Touch where a wall should start and swipe: sideways for horizontal, up or down for vertical.</p>`;
 }
 
-export function pauseScreen(): string {
+export function pauseScreen(audio: AudioSettings): string {
   return `
     <h2>Paused</h2>
     <div class="buttons">
       ${button('resume', 'Resume', true)}
       ${button('quit', 'Quit to menu')}
-    </div>`;
+    </div>
+    ${audioToggles(audio)}`;
 }
 
 export function levelClearedScreen(level: number, bonus: LevelBonus, total: number, scored: boolean): string {
