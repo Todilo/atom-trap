@@ -22,6 +22,17 @@ interface Particle {
   maxLife: number;
 }
 
+/**
+ * How an atom touches another this step: it `bounce`d off it, it waited (`stall`) because that one
+ * just moved into its path, or it's the atom a bounce hit (`echo`), drawn meeting the bouncer.
+ */
+interface Contact {
+  x: number;
+  y: number;
+  partner: number;
+  kind: 'bounce' | 'stall' | 'echo';
+}
+
 /** The simulation as it was before its latest step, so frames in between can be drawn smoothly. */
 export interface Snapshot {
   atoms: Atom[];
@@ -61,6 +72,8 @@ export class NeonRenderer {
 
   private tipSprites: Sprite[] = [];
   private particles: Particle[] = [];
+  /** Atoms that waited touching another, with the offset they waited at and the step it was. */
+  private held = new Map<number, { x: number; y: number; step: number }>();
   private spritePool: Sprite[] = [];
 
   private constructor(
@@ -162,6 +175,7 @@ export class NeonRenderer {
 
   private reset(sim: Simulation | null): void {
     this.sim = sim;
+    this.held.clear();
     const n = sim ? sim.rules.cols * sim.rules.rows : 0;
     this.prevGrid = new Uint8Array(n);
     this.removedAt = new Float64Array(n).fill(-1);
@@ -331,16 +345,30 @@ export class NeonRenderer {
     const py = (cy: number) => l.y + (cy + 0.5) * l.cellH;
     this.atoms.begin();
     const contacts = sim.atoms.map((atom, i) => this.contactOffset(previous[i] ?? atom, previous, i, diameter));
-    // A bounce also redirects the atom it hit; animate that one towards the contact too, so both meet.
+    // An atom that waited last step already touches the one it bounces off: it leaves from there.
+    const heldLastStep = (i: number) => this.held.get(i)?.step === sim.steps - 1;
+    // A bounce also redirects the atom it hit; animate that one towards the contact too, so both meet,
+    // unless they already met while the bouncer waited.
     contacts.forEach((c, i) => {
-      if (c?.mirror && !contacts[c.partner]) contacts[c.partner] = { x: -c.x, y: -c.y, partner: i, mirror: false };
+      if (c?.kind === 'bounce' && !heldLastStep(i) && !contacts[c.partner]) contacts[c.partner] = { x: -c.x, y: -c.y, partner: i, kind: 'echo' };
     });
     sim.atoms.forEach((atom, i) => {
       const p = previous[i] ?? atom;
       let x: number;
       let y: number;
       const contact = contacts[i];
-      if (contact) {
+      const held = this.held.get(i);
+      if (contact?.kind === 'stall') {
+        // Held up by an atom that just moved into its path (it bounces next step): close the gap and
+        // stay touching, so the collision reads as one touch rather than two.
+        x = px(p.x) + contact.x * alpha;
+        y = py(p.y) + contact.y * alpha;
+        this.held.set(i, { x: contact.x, y: contact.y, step: sim.steps });
+      } else if (contact?.kind === 'bounce' && held && heldLastStep(i)) {
+        // The bounce after waiting: leave from the contact point.
+        x = px(p.x) + held.x + (px(atom.x) - px(p.x) - held.x) * alpha;
+        y = py(p.y) + held.y + (py(atom.y) - py(p.y) - held.y) * alpha;
+      } else if (contact) {
         // Bounced off another atom this step: keep travelling until the bodies touch, then come back.
         const half = alpha < 0.5;
         const k = half ? alpha / 0.5 : (alpha - 0.5) / 0.5;
@@ -361,7 +389,7 @@ export class NeonRenderer {
    * brings the two bodies into contact. The simulation resolves collisions between neighbouring cells,
    * as the original does; this only makes them look like a touch.
    */
-  private contactOffset(p: Atom, previous: Atom[], i: number, diameter: number): { x: number; y: number; partner: number; mirror: boolean } | null {
+  private contactOffset(p: Atom, previous: Atom[], i: number, diameter: number): Contact | null {
     const atoms = this.sim!.atoms;
     const now = atoms[i];
     const bounced = now.dx !== p.dx || now.dy !== p.dy;
@@ -380,8 +408,9 @@ export class NeonRenderer {
       const vx = ox * l.cellW;
       const vy = oy * l.cellH;
       const dist = Math.hypot(vx, vy);
-      const travel = Math.max(0, (dist - diameter) / 2);
-      return { x: (vx / dist) * travel, y: (vy / dist) * travel, partner: j, mirror: bounced };
+      // In a bounce both atoms move to meet halfway; a waiting atom closes the whole gap itself.
+      const travel = Math.max(0, (dist - diameter) / (bounced ? 2 : 1));
+      return { x: (vx / dist) * travel, y: (vy / dist) * travel, partner: j, kind: bounced ? 'bounce' : 'stall' };
     }
     return null;
   }
