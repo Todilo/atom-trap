@@ -1,0 +1,17 @@
+node_modules/
+dist/
+dev-dist/
+*.log
+.DS_Store
+
+# Never commit the original game's files (ADR-0011)
+*.EXE
+*.exe
+*.HLP
+*.hlp
+*.DLL
+*.dll
+*.WAV
+*.wav
+*.zip
+*.asm
