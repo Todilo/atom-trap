@@ -199,9 +199,120 @@ body {
   }
 }
 
+/* Show the demo that matches the player's pointer (set on #hint by main.ts). */
+#hint.touch .mouse-demo,
+#hint.mouse .touch-demo {
+  display: none;
+}
+
+#hint .mouse-demo {
+  width: 120px;
+  height: 110px;
+}
+
+#hint .pointer {
+  position: absolute;
+  left: 58px;
+  top: 53px;
+  width: 22px;
+  height: 33px;
+  fill: #fff;
+  stroke: var(--bg);
+  stroke-width: 1.2;
+  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.6));
+  animation: hint-pointer 2.4s ease-in-out infinite;
+}
+
+#hint .ripple {
+  position: absolute;
+  left: 46px;
+  top: 41px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  opacity: 0;
+  animation: hint-ripple 2.4s ease-out infinite;
+}
+
+#hint .vbeam {
+  position: absolute;
+  left: 57px;
+  top: 54px;
+  width: 4px;
+  height: 0;
+  border-radius: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+  animation: hint-vbeam 2.4s ease-in-out infinite;
+}
+
+@keyframes hint-pointer {
+  0% {
+    transform: translate(30px, 24px);
+    opacity: 0;
+  }
+  15%,
+  25% {
+    transform: translate(0, 0);
+    opacity: 1;
+  }
+  30% {
+    transform: translate(0, 0) scale(0.85);
+  }
+  36%,
+  85% {
+    transform: translate(0, 0) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(0, 0);
+    opacity: 0;
+  }
+}
+
+@keyframes hint-ripple {
+  0%,
+  29% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  31% {
+    transform: scale(0.5);
+    opacity: 0.9;
+  }
+  50%,
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+@keyframes hint-vbeam {
+  0%,
+  32% {
+    top: 54px;
+    height: 0;
+    opacity: 1;
+  }
+  80% {
+    top: 4px;
+    height: 100px;
+    opacity: 1;
+  }
+  100% {
+    top: 4px;
+    height: 100px;
+    opacity: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   #hint .finger,
-  #hint .beam {
+  #hint .beam,
+  #hint .pointer,
+  #hint .ripple,
+  #hint .vbeam {
     animation: none;
   }
 }

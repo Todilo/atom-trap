@@ -58,6 +58,7 @@ let gameOver: { reason: 'lives' | 'time'; rank: number | null; savedName: string
 
 const hintEl = $('hint');
 const coarsePointer = window.matchMedia('(pointer: coarse)').matches;
+hintEl.classList.add(coarsePointer ? 'touch' : 'mouse');
 $('hint-text').innerHTML = coarsePointer
   ? 'Touch where a wall should start, then swipe:<br>sideways for horizontal, up or down for vertical.<br><small>The atoms wait for your first wall.</small>'
   : 'Click to build a wall. Right-click turns it<br>between vertical and horizontal.<br><small>The atoms wait for your first wall.</small>';

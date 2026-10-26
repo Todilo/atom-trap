@@ -22,7 +22,13 @@
       </header>
       <main id="app"></main>
       <div id="hint" hidden>
-        <div class="demo"><span class="finger"></span><span class="beam"></span></div>
+        <!-- Touch: a finger touches and swipes. Mouse: a pointer clicks and a vertical wall grows both ways. -->
+        <div class="demo touch-demo"><span class="finger"></span><span class="beam"></span></div>
+        <div class="demo mouse-demo">
+          <span class="vbeam"></span>
+          <span class="ripple"></span>
+          <svg class="pointer" viewBox="0 0 16 24" aria-hidden="true"><path d="M1 1 L1 19 L5.5 14.5 L8.5 22 L11.5 20.8 L8.6 13.4 L14.5 13.4 Z" /></svg>
+        </div>
         <p id="hint-text"></p>
       </div>
       <section id="screen" hidden></section>
