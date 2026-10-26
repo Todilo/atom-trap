@@ -57,3 +57,23 @@ describe('Run', () => {
     expect(progress.submitScore({ score: 1000, level: 2, date: '2026-10-26' })).toBe(5);
   });
 });
+
+describe('Slow speed and names', () => {
+  it('a slow run uses the slow ruleset and is marked in the table', () => {
+    const progress = new Progress(memoryStore());
+    const run = new Run('scored', progress, 'slow');
+    expect(run.sim.rules.stepMs).toBe(200);
+    expect(run.sim.rules.scoreScale).toBe(0.5);
+    run.sim.score = 500;
+    expect(run.finish()).toBe(1);
+    expect(progress.highScores[0].speed).toBe('slow');
+  });
+
+  it('names an entry and remembers the name', () => {
+    const progress = new Progress(memoryStore());
+    progress.submitScore({ score: 100, level: 1, date: '2026-10-26' });
+    progress.nameScore(1, '  Christian the Great  ');
+    expect(progress.highScores[0].name).toBe('Christian th');
+    expect(progress.playerName).toBe('Christian th');
+  });
+});

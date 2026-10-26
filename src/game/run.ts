@@ -1,5 +1,5 @@
 import type { KeyValueStore } from '../shell/storage';
-import { classicRuleset } from '../sim/ruleset';
+import { classicRuleset, type ClassicSpeed } from '../sim/ruleset';
 import { Simulation } from '../sim/simulation';
 
 /**
@@ -13,7 +13,12 @@ export interface HighScore {
   level: number;
   /** ISO date. */
   date: string;
+  name?: string;
+  /** Set for runs played at the original's Slow speed (half points). */
+  speed?: ClassicSpeed;
 }
+
+export const MAX_NAME_LENGTH = 12;
 
 export const HIGH_SCORE_SLOTS = 10;
 
@@ -30,6 +35,21 @@ export class Progress {
 
   get highScores(): HighScore[] {
     return this.store.get<HighScore[]>('highScores', []);
+  }
+
+  /** The name last entered for a high score, offered again next time. */
+  get playerName(): string {
+    return this.store.get('playerName', '');
+  }
+
+  /** Names the entry at a 1-based rank, and remembers the name for next time. */
+  nameScore(rank: number, name: string): void {
+    const clean = name.trim().slice(0, MAX_NAME_LENGTH);
+    const table = this.highScores;
+    if (!table[rank - 1]) return;
+    table[rank - 1] = { ...table[rank - 1], name: clean || undefined };
+    this.store.set('highScores', table);
+    this.store.set('playerName', clean);
   }
 
   /** Records a scored run's result; returns its 1-based rank, or null if it didn't make the table. */
@@ -52,6 +72,7 @@ export class Run {
   constructor(
     readonly kind: RunKind,
     private readonly progress: Progress,
+    readonly speed: ClassicSpeed = 'fast',
     private readonly seed: () => number = () => (Math.random() * 0xffffffff) >>> 0,
   ) {
     this.level = kind === 'scored' ? 1 : progress.highestLevel;
@@ -74,11 +95,16 @@ export class Run {
   /** Call once when the run ends; only scored runs reach the table. */
   finish(): number | null {
     if (this.kind !== 'scored') return null;
-    return this.progress.submitScore({ score: Math.round(this.score), level: this.level, date: new Date().toISOString() });
+    return this.progress.submitScore({
+      score: Math.round(this.score),
+      level: this.level,
+      date: new Date().toISOString(),
+      ...(this.speed === 'slow' ? { speed: 'slow' as const } : {}),
+    });
   }
 
   private startLevel(): Simulation {
     this.progress.noteLevelStarted(this.level);
-    return new Simulation(classicRuleset(this.level), { seed: this.seed() });
+    return new Simulation(classicRuleset(this.level, this.speed), { seed: this.seed() });
   }
 }

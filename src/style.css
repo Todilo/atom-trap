@@ -102,6 +102,110 @@ body {
   cursor: pointer;
 }
 
+/* First-play hint: a finger touches down and swipes sideways while a wall beam grows from it. */
+#hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  pointer-events: none;
+  text-align: center;
+}
+
+#hint[hidden] {
+  display: none;
+}
+
+#hint p {
+  margin: 0;
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: rgba(5, 6, 15, 0.75);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+#hint .demo {
+  position: relative;
+  width: 200px;
+  height: 44px;
+}
+
+#hint .finger {
+  position: absolute;
+  left: 80px;
+  top: 6px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: rgba(255, 255, 255, 0.25);
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.6);
+  animation: hint-finger 2.2s ease-in-out infinite;
+}
+
+#hint .beam {
+  position: absolute;
+  left: 96px;
+  top: 20px;
+  width: 0;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+  animation: hint-beam 2.2s ease-in-out infinite;
+}
+
+@keyframes hint-finger {
+  0%,
+  15% {
+    transform: translateX(0) scale(1.3);
+    opacity: 0;
+  }
+  25% {
+    transform: translateX(0) scale(1);
+    opacity: 1;
+  }
+  55% {
+    transform: translateX(46px) scale(1);
+    opacity: 1;
+  }
+  70%,
+  100% {
+    transform: translateX(46px) scale(1);
+    opacity: 0;
+  }
+}
+
+@keyframes hint-beam {
+  0%,
+  45% {
+    left: 96px;
+    width: 0;
+    opacity: 1;
+  }
+  85% {
+    left: 6px;
+    width: 188px;
+    opacity: 1;
+  }
+  100% {
+    left: 6px;
+    width: 188px;
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #hint .finger,
+  #hint .beam {
+    animation: none;
+  }
+}
+
 #screen {
   position: absolute;
   inset: 0;
@@ -178,6 +282,33 @@ body {
   padding: 6px 12px;
   font-size: 13px;
   border-color: rgba(62, 232, 255, 0.4);
+}
+
+#screen .name-entry {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+#screen .name-entry input {
+  width: 180px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--accent);
+  background: rgba(62, 232, 255, 0.08);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+#screen .name-entry button {
+  min-width: 80px;
+}
+
+#screen .scores .name {
+  color: var(--accent);
 }
 
 #screen button.primary {

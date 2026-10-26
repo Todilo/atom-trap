@@ -1,6 +1,5 @@
-import type { HighScore } from '../game/run';
-import type { AudioSettings } from './audio';
-import type { LevelBonus } from '../sim/ruleset';
+import { MAX_NAME_LENGTH, type HighScore } from '../game/run';
+import type { ClassicSpeed, LevelBonus } from '../sim/ruleset';
 
 /**
  * Menu and message screens as plain HTML. Buttons carry `data-action`; the shell handles the clicks.
@@ -8,17 +7,30 @@ import type { LevelBonus } from '../sim/ruleset';
  */
 const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
 
+const escape = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
 const button = (action: string, label: string, primary = false) =>
   `<button type="button" data-action="${action}" class="${primary ? 'primary' : ''}">${label}</button>`;
 
-/** Music and sound switches (ADR-0008). */
-const audioToggles = (a: AudioSettings) => `
+/** Player preferences shown as switches. */
+export interface Prefs {
+  music: boolean;
+  sfx: boolean;
+  haptics: boolean;
+  speed: ClassicSpeed;
+}
+
+const onOff = (on: boolean) => (on ? 'On' : 'Off');
+
+/** Music, sound and vibration switches (ADR-0008); vibration only where the device supports it. */
+const toggles = (p: Prefs, hapticsSupported: boolean) => `
     <div class="buttons toggles">
-      ${button('toggle-music', `Music: ${a.music ? 'On' : 'Off'}`)}
-      ${button('toggle-sfx', `Sound: ${a.sfx ? 'On' : 'Off'}`)}
+      ${button('toggle-music', `Music: ${onOff(p.music)}`)}
+      ${button('toggle-sfx', `Sound: ${onOff(p.sfx)}`)}
+      ${hapticsSupported ? button('toggle-haptics', `Vibration: ${onOff(p.haptics)}`) : ''}
     </div>`;
 
-export function titleScreen(highestLevel: number, audio: AudioSettings): string {
+export function titleScreen(highestLevel: number, prefs: Prefs, hapticsSupported: boolean): string {
   return `
     <h1>Atom Trap</h1>
     <p class="tagline">A neon tribute to JezzBall (1992)</p>
@@ -27,18 +39,20 @@ export function titleScreen(highestLevel: number, audio: AudioSettings): string 
       ${highestLevel > 1 ? button('continue', `Continue from level ${highestLevel}`) : ''}
       ${button('scores', 'High scores')}
     </div>
-    ${audioToggles(audio)}
-    <p class="hint">Touch where a wall should start and swipe: sideways for horizontal, up or down for vertical.</p>`;
+    <div class="buttons toggles">
+      ${button('toggle-speed', `Speed: ${prefs.speed === 'fast' ? 'Fast' : 'Slow (half points)'}`)}
+    </div>
+    ${toggles(prefs, hapticsSupported)}`;
 }
 
-export function pauseScreen(audio: AudioSettings): string {
+export function pauseScreen(prefs: Prefs, hapticsSupported: boolean): string {
   return `
     <h2>Paused</h2>
     <div class="buttons">
       ${button('resume', 'Resume', true)}
       ${button('quit', 'Quit to menu')}
     </div>
-    ${audioToggles(audio)}`;
+    ${toggles(prefs, hapticsSupported)}`;
 }
 
 export function levelClearedScreen(level: number, bonus: LevelBonus, total: number, scored: boolean): string {
@@ -55,11 +69,29 @@ export function levelClearedScreen(level: number, bonus: LevelBonus, total: numb
     <p class="hint" data-tap="next">Tap to start level ${level + 1}</p>`;
 }
 
-export function gameOverScreen(reason: 'lives' | 'time', score: number, level: number, scored: boolean, rank: number | null): string {
+/** `rank` set means a new high score; `savedName` set means its name has been saved. */
+export function gameOverScreen(
+  reason: 'lives' | 'time',
+  score: number,
+  level: number,
+  scored: boolean,
+  rank: number | null,
+  name: string,
+  savedName: string | null,
+): string {
+  const entry = !rank
+    ? ''
+    : savedName !== null
+      ? `<p class="hint">Saved as ${escape(savedName || 'anonymous')}.</p>`
+      : `<form class="name-entry" data-action-form="save-name">
+          <input id="name-input" type="text" maxlength="${MAX_NAME_LENGTH}" placeholder="Your name" value="${escape(name)}" autocomplete="nickname" enterkeyhint="done" />
+          ${button('save-name', 'Save')}
+        </form>`;
   return `
     <h2>${reason === 'time' ? 'Out of time' : 'Game over'}</h2>
     <p>Level ${level} · Score ${fmt(score)}</p>
     ${rank ? `<p class="highlight">New high score, #${rank}!</p>` : ''}
+    ${entry}
     ${scored ? '' : '<p class="hint">Continue runs don’t count for high scores.</p>'}
     <div class="buttons">
       ${button('play', 'Play again', true)}
@@ -69,7 +101,10 @@ export function gameOverScreen(reason: 'lives' | 'time', score: number, level: n
 
 export function highScoresScreen(scores: HighScore[]): string {
   const rows = scores
-    .map((s, i) => `<tr><td>${i + 1}</td><td>${fmt(s.score)}</td><td>Level ${s.level}</td><td>${s.date.slice(0, 10)}</td></tr>`)
+    .map(
+      (s, i) =>
+        `<tr><td>${i + 1}</td><td class="name">${escape(s.name ?? '—')}</td><td>${fmt(s.score)}</td><td>Level ${s.level}${s.speed === 'slow' ? ' · slow' : ''}</td><td>${s.date.slice(0, 10)}</td></tr>`,
+    )
     .join('');
   return `
     <h2>High scores</h2>
