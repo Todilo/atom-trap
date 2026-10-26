@@ -20,6 +20,8 @@ const C = {
 };
 
 const TRAIL_LENGTH = 7;
+/** Trail points fade out over this time, so an atom that stops (or is stuck) loses its trail. */
+const TRAIL_MS = 280;
 /** Delay per cell of the fill sweep, spreading out from the wall that closed the area. */
 const SWEEP_MS_PER_CELL = 16;
 const FILL_FLASH_MS = 450;
@@ -88,7 +90,8 @@ export class NeonRenderer {
   private atomSprites: Sprite[] = [];
   private coreSprites: Sprite[] = [];
   private trailSprites: Sprite[][] = [];
-  private trails: { x: number; y: number }[][] = [];
+  private trails: { x: number; y: number; t: number }[][] = [];
+  private trailLast: ({ x: number; y: number } | null)[] = [];
   private tipSprites: Sprite[] = [];
   private particles: Particle[] = [];
   private spritePool: Sprite[] = [];
@@ -131,6 +134,7 @@ export class NeonRenderer {
     this.layout = layout;
     this.edgesDirty = true;
     for (const t of this.trails) t.length = 0;
+    this.trailLast.fill(null);
     const g = this.bg.clear();
     g.rect(layout.x, layout.y, layout.width, layout.height).fill(C.board);
     for (let x = 1; x < cols; x++) g.moveTo(layout.x + x * layout.cellW, layout.y).lineTo(layout.x + x * layout.cellW, layout.y + layout.height);
@@ -183,6 +187,7 @@ export class NeonRenderer {
     this.coreSprites = [];
     this.trailSprites = [];
     this.trails = [];
+    this.trailLast = [];
     if (!sim) return;
     for (let i = 0; i < sim.atoms.length; i++) {
       const trail: Sprite[] = [];
@@ -347,6 +352,7 @@ export class NeonRenderer {
 
   private drawAtoms(sim: Simulation, previous: Atom[], alpha: number): void {
     const l = this.layout!;
+    const now = performance.now();
     const unit = Math.min(l.cellW, l.cellH);
     // The atom's solid body fills a cell's height, as in the original, so neighbours look touching.
     const diameter = unit;
@@ -382,16 +388,19 @@ export class NeonRenderer {
       core.scale.set((diameter * 1.15) / 64);
 
       const trail = this.trails[i];
-      const last = trail[0];
-      if (!last || Math.hypot(last.x - x, last.y - y) > unit * 0.25) {
-        trail.unshift({ x, y });
+      // Sample a new point only when the atom has moved since the last sample (which may have expired).
+      const last = this.trailLast[i];
+      if (!last || Math.hypot(last.x - x, last.y - y) > Math.max(1, unit * 0.25)) {
+        this.trailLast[i] = { x, y };
+        trail.unshift({ x, y, t: now });
         if (trail.length > TRAIL_LENGTH) trail.pop();
       }
+      while (trail.length && now - trail[trail.length - 1].t > TRAIL_MS) trail.pop();
       this.trailSprites[i].forEach((s, t) => {
         const pt = trail[t];
         s.visible = !!pt;
         if (!pt) return;
-        const k = 1 - t / TRAIL_LENGTH;
+        const k = (1 - t / TRAIL_LENGTH) * (1 - (now - pt.t) / TRAIL_MS);
         s.position.set(pt.x, pt.y);
         s.scale.set(((unit * 1.6) / 64) * k);
         s.alpha = 0.35 * k;
