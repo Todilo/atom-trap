@@ -2,7 +2,7 @@ import { dailyStars, dayNumber, type DailyResult } from '../game/daily';
 import { GAME_MODES, modeById, type GameModeId } from '../game/modes';
 import { PUZZLES } from '../game/puzzles';
 import { layoutById } from '../sim/layouts';
-import { MAX_NAME_LENGTH, type HighScore } from '../game/run';
+import { MAX_NAME_LENGTH, type HighScore, type RunMode } from '../game/run';
 import { ATOM_STYLES, THEMES, type AtomStyle } from '../render/themes';
 import type { ClassicSpeed, LevelBonus } from '../sim/ruleset';
 
@@ -115,15 +115,20 @@ export function attractScreen(touch: boolean): string {
     </button>`;
 }
 
-export function titleScreen(highestLevel: number, prefs: Prefs, bestScore: number | null, puzzles: PuzzleSummary, daily: DailySummary): string {
+/** A scored mode's high-score table and highest level (Classic, Arcade). */
+export interface ScoreTable {
+  scores: HighScore[];
+  highestLevel: number;
+}
+
+export function titleScreen(prefs: Prefs, tables: Record<RunMode, ScoreTable>, puzzles: PuzzleSummary, daily: DailySummary): string {
   const selected = modeById(prefs.mode);
   const cards = GAME_MODES.map((m) => {
     const on = m.id === selected.id;
+    const best = (t: ScoreTable) => (t.scores.length ? `Best <b>${fmt(t.scores[0].score)}</b>` : 'No score yet');
     const foot =
-      m.id === 'classic'
-        ? bestScore
-          ? `Best <b>${fmt(bestScore)}</b>`
-          : 'No score yet'
+      m.id === 'classic' || m.id === 'arcade'
+        ? best(tables[m.id])
         : m.id === 'puzzle'
           ? `Stars <b>${puzzles.total} / ${puzzles.max}</b>`
           : m.id === 'daily'
@@ -156,12 +161,17 @@ export function titleScreen(highestLevel: number, prefs: Prefs, bestScore: numbe
       : selected.id === 'puzzle'
       ? `${button('puzzles', 'All puzzles', 'secondary')}
       ${button(`puzzle:${next}`, `${icon.play}Puzzle ${next + 1}`, 'primary big')}`
-      : selected.available
-    ? `<div class="segmented" role="group" aria-label="Speed">
+      : selected.id === 'classic' || selected.id === 'arcade'
+    ? `${
+        // Slow speed is the original's; Arcade plays at Fast.
+        selected.id === 'classic'
+          ? `<div class="segmented" role="group" aria-label="Speed">
         ${button('speed:fast', 'Fast', prefs.speed === 'fast' ? 'on' : '', `aria-pressed="${prefs.speed === 'fast'}"`)}
         ${button('speed:slow', 'Slow · ½ points', prefs.speed === 'slow' ? 'on' : '', `aria-pressed="${prefs.speed === 'slow'}"`)}
-      </div>
-      ${highestLevel > 1 ? button('continue', `Continue · level ${highestLevel}`, 'secondary') : ''}
+      </div>`
+          : ''
+      }
+      ${tables[selected.id].highestLevel > 1 ? button('continue', `Continue · level ${tables[selected.id].highestLevel}`, 'secondary') : ''}
       ${button('play', `${icon.play}Play`, 'primary big')}`
     : `<p class="soon-note">This mode is on the way. Classic progress and scores carry over.</p>
       <button type="button" class="soon" disabled>Coming soon</button>`;
@@ -386,7 +396,7 @@ export function gameOverScreen(
     </div>`;
 }
 
-export function highScoresScreen(scores: HighScore[], tab: GameModeId, highestLevel: number, puzzles: PuzzleSummary, daily: DailySummary): string {
+export function highScoresScreen(tables: Record<RunMode, ScoreTable>, tab: GameModeId, puzzles: PuzzleSummary, daily: DailySummary): string {
   const tabs = GAME_MODES.map(
     (m) => button(`scores:${m.id}`, m.name, m.id === tab ? 'on' : '', `role="tab" aria-selected="${m.id === tab}"`),
   ).join('');
@@ -431,7 +441,7 @@ export function highScoresScreen(scores: HighScore[], tab: GameModeId, highestLe
           </div>
         </aside>
       </div>`;
-  } else if (mode.id !== 'classic') {
+  } else if (mode.id !== 'classic' && mode.id !== 'arcade') {
     body = `
       <section class="panel empty" role="tabpanel">
         ${MODE_ART[mode.id]}
@@ -439,6 +449,7 @@ export function highScoresScreen(scores: HighScore[], tab: GameModeId, highestLe
         <p>${mode.scoresNote ?? ''}</p>
       </section>`;
   } else {
+    const { scores, highestLevel } = tables[mode.id];
     const rows = scores
       .map(
         (s, i) =>
@@ -458,7 +469,7 @@ export function highScoresScreen(scores: HighScore[], tab: GameModeId, highestLe
             <span class="dim">${scores.length ? `Level ${scores[0].level}` : 'Play a scored run'}</span>
           </div>
           <div class="panel">
-            <span class="section-label">Classic</span>
+            <span class="section-label">${mode.name}</span>
             <div class="kv"><span>Highest level reached</span><b>${highestLevel}</b></div>
             <div class="kv"><span>Scores in the table</span><b>${scores.length}</b></div>
           </div>
@@ -542,6 +553,16 @@ export function puzzleFailedScreen(reason: 'lives' | 'time' | 'walls', index: nu
         ${button('puzzles', 'All puzzles', 'secondary grow')}
         ${button('retry', `${icon.restart}Retry`, 'primary big grow')}
       </div>
+    </div>`;
+}
+
+/** Arcade's quick note between boards (it moves on by itself): the time the clear added. */
+export function arcadeClearedBanner(level: number, seconds: number): string {
+  return `
+    <div class="banner-card" role="status">
+      <p class="kicker">Level ${level} cleared</p>
+      <p class="banner-time">+${seconds} s</p>
+      <p class="sub">Level ${level + 1} next</p>
     </div>`;
 }
 

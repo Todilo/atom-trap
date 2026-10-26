@@ -20,6 +20,8 @@ export interface Atom {
   y: number;
   dx: number;
   dy: number;
+  /** Arcade: sealed into a small pocket (ADR-0018). A captured atom is off the board for good. */
+  captured?: boolean;
 }
 
 export interface WallHalf {
@@ -35,10 +37,14 @@ export type GameEvent =
   | { type: 'wall-completed'; slot: Slot }
   | { type: 'wall-broken'; slot: Slot }
   | { type: 'life-lost'; livesLeft: number }
-  | { type: 'cells-removed'; count: number; points: number }
+  /** `x`, `y`: the middle of the removed cells, in cells, for showing the points there. */
+  | { type: 'cells-removed'; count: number; points: number; x: number; y: number }
   | { type: 'time-warning' }
   | { type: 'level-cleared'; bonus: LevelBonus }
-  | { type: 'game-over'; reason: 'lives' | 'time' | 'walls' };
+  | { type: 'game-over'; reason: 'lives' | 'time' | 'walls' }
+  | { type: 'big-catch'; cells: number }
+  | { type: 'atom-captured'; x: number; y: number; points: number }
+  | { type: 'chain'; count: number };
 
 export interface SimulationOptions {
   seed?: number;
@@ -67,6 +73,10 @@ export class Simulation {
   steps = 0;
   /** Walls placed so far; a placement counts once at least one of its halves starts. */
   wallsPlaced = 0;
+  /** Arcade chain: fills and captures in quick succession (0 when none is running). */
+  chain = 0;
+  /** The step the chain ends at unless something fills first. */
+  chainEndsAt = 0;
 
   private readonly grid: Uint8Array;
   /** Index of the atom in each cell, or -1. Atoms never share a cell. */
@@ -94,7 +104,7 @@ export class Simulation {
       this.occupant[this.idx(a.x, a.y)] = i;
     });
     // A layout pocket that got no atom would be filled, for free points, by the first wall: fill it now.
-    if (filled) this.startFilled = filled + this.fillEmptyRegions();
+    if (filled) this.startFilled = filled + this.fillEmptyRegions().length;
   }
 
   /** An independent copy, so a copy can be played forward to look ahead (the puzzle-tuning bot). */
@@ -126,6 +136,17 @@ export class Simulation {
     if (this.status === 'playing' && this.wallsLeft !== 0) this.queued = { x, y, orientation };
   }
 
+  /** The multiplier points get from the chain now (Arcade). */
+  get chainMultiplier(): number {
+    const m = this.rules.chainMultipliers;
+    return this.chain === 0 ? 1 : m[Math.min(this.chain - 1, m.length - 1)];
+  }
+
+  /** Atoms still on the board (Arcade captures take them off). */
+  get liveAtoms(): number {
+    return this.atoms.filter((a) => !a.captured).length;
+  }
+
   /** Walls the player may still place, or null when there is no limit. */
   get wallsLeft(): number | null {
     return this.rules.wallLimit ? Math.max(0, this.rules.wallLimit - this.wallsPlaced) : null;
@@ -136,15 +157,20 @@ export class Simulation {
     if (this.status !== 'playing') return events;
     this.steps++;
 
+    // The chain only runs down while the player is choosing the next wall, not while one is growing.
+    if (this.chain && (this.halves.a || this.halves.b)) this.chainEndsAt++;
+    if (this.chain && this.steps > this.chainEndsAt) this.chain = 0;
     this.applyQueuedWall(events);
     for (const slot of ['a', 'b'] as const) this.advanceHalf(slot, events);
     // Like the original's two phases: every atom decides its bounce on the same positions, then all move.
-    for (let i = 0; i < this.atoms.length; i++) this.bounceAtom(i);
-    for (let i = 0; i < this.atoms.length; i++) this.moveAtom(i);
+    for (let i = 0; i < this.atoms.length; i++) if (!this.atoms[i].captured) this.bounceAtom(i);
+    for (let i = 0; i < this.atoms.length; i++) if (!this.atoms[i].captured) this.moveAtom(i);
     this.checkBreaks(events);
 
     if (this.status === 'playing') this.tickTimer(events);
-    if (this.status === 'playing' && this.coverage >= this.rules.targetCoverage && !this.halves.a && !this.halves.b) {
+    // Arcade: capturing the last atom clears the board too.
+    const allCaught = this.rules.captureSize > 0 && this.liveAtoms === 0;
+    if (this.status === 'playing' && (this.coverage >= this.rules.targetCoverage || allCaught) && !this.halves.a && !this.halves.b) {
       const bonus = levelBonus(this.rules, this.coverage * 100, this.lives, this.timeLeft);
       this.score += bonus.total;
       this.status = 'cleared';
@@ -198,32 +224,76 @@ export class Simulation {
 
   private completeHalf(half: WallHalf, events: GameEvent[]): void {
     this.halves[half.slot] = null;
-    let removed = 0;
+    const removed: number[] = [];
     for (const c of half.cells) {
       this.grid[this.idx(c.x, c.y)] = CELL_REMOVED;
-      removed++;
+      removed.push(this.idx(c.x, c.y));
     }
     events.push({ type: 'wall-completed', slot: half.slot });
-    removed += this.fillEmptyRegions();
-    this.removeCells(removed, events);
+    removed.push(...this.fillEmptyRegions());
+    const pockets = this.captureAtoms();
+    // Arcade: a fill or capture extends the chain, which multiplies the points; a big fill doubles them.
+    this.extendChain(events);
+    const big = this.rules.bigCatchShare > 0 && removed.length >= this.rules.bigCatchShare * this.clearableCells;
+    const multiplier = this.chainMultiplier * (big ? 2 : 1);
+    this.removeCells([...removed, ...pockets.flatMap((p) => p.cells)], events, multiplier);
+    if (big) events.push({ type: 'big-catch', cells: removed.length });
+    for (const pocket of pockets) {
+      for (const a of pocket.atoms) {
+        const points = this.rules.capturePoints * this.rules.scoreScale * this.chainMultiplier;
+        this.score += points;
+        if (this.rules.timeLimit) this.timeLeft += this.rules.captureTime;
+        events.push({ type: 'atom-captured', x: a.x, y: a.y, points });
+      }
+    }
   }
 
-  /** Removes every open region (4-connected) that holds no atom. Growing cells are part of a region. */
-  private fillEmptyRegions(): number {
+  private get clearableCells(): number {
+    return this.rules.cols * this.rules.rows - this.startFilled;
+  }
+
+  private extendChain(events: GameEvent[]): void {
+    if (!this.rules.chainWindow) return;
+    this.chain = this.chain && this.steps <= this.chainEndsAt ? this.chain + 1 : 1;
+    this.chainEndsAt = this.steps + this.rules.chainWindow;
+    events.push({ type: 'chain', count: this.chain });
+  }
+
+  /**
+   * Arcade: an atom sealed into a pocket of at most `captureSize` cells is captured, and the pocket
+   * fills (ADR-0018). A pocket with a wall still growing in it isn't sealed yet.
+   */
+  private captureAtoms(): { cells: number[]; atoms: Atom[] }[] {
+    if (!this.rules.captureSize) return [];
+    const pockets = this.openRegions().filter(
+      (r) => r.atoms.length > 0 && r.cells.length <= this.rules.captureSize && r.cells.every((i) => this.grid[i] === CELL_OPEN),
+    );
+    return pockets.map((r) => {
+      const atoms = r.atoms.map((i) => this.atoms[i]);
+      for (const a of atoms) {
+        a.captured = true;
+        this.occupant[this.idx(a.x, a.y)] = -1;
+      }
+      for (const i of r.cells) this.grid[i] = CELL_REMOVED;
+      return { cells: r.cells, atoms };
+    });
+  }
+
+  /** The open regions (4-connected; growing cells count as open), with the atoms in each. */
+  private openRegions(): { cells: number[]; atoms: number[] }[] {
     const { cols, rows } = this.rules;
     const seen = new Uint8Array(cols * rows);
-    const stack: number[] = [];
-    let removed = 0;
+    const regions: { cells: number[]; atoms: number[] }[] = [];
     for (let start = 0; start < cols * rows; start++) {
       if (seen[start] || this.grid[start] === CELL_REMOVED) continue;
-      const region: number[] = [];
-      let hasAtom = false;
-      stack.push(start);
+      const cells: number[] = [];
+      const atoms: number[] = [];
+      const stack = [start];
       seen[start] = 1;
       while (stack.length) {
         const i = stack.pop()!;
-        region.push(i);
-        if (this.occupant[i] !== -1) hasAtom = true;
+        cells.push(i);
+        if (this.occupant[i] !== -1) atoms.push(this.occupant[i]);
         const x = i % cols;
         const y = (i - x) / cols;
         for (const [nx, ny] of [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]]) {
@@ -234,20 +304,33 @@ export class Simulation {
           stack.push(n);
         }
       }
+      regions.push({ cells, atoms });
+    }
+    return regions;
+  }
+
+  /** Removes every open region that holds no atom, returning its cells. */
+  private fillEmptyRegions(): number[] {
+    const removed: number[] = [];
+    for (const r of this.openRegions()) {
       // A region still holding a growing half is never filled: that half has nothing to anchor to yet.
-      if (hasAtom || region.some((i) => this.grid[i] !== CELL_OPEN)) continue;
-      for (const i of region) this.grid[i] = CELL_REMOVED;
-      removed += region.length;
+      if (r.atoms.length || r.cells.some((i) => this.grid[i] !== CELL_OPEN)) continue;
+      for (const i of r.cells) this.grid[i] = CELL_REMOVED;
+      removed.push(...r.cells);
     }
     return removed;
   }
 
-  private removeCells(count: number, events: GameEvent[]): void {
+  private removeCells(cells: number[], events: GameEvent[], multiplier = 1): void {
+    const count = cells.length;
     if (count === 0) return;
     this.removedCells += count;
-    const points = count * this.rules.pointsPerCell * this.rules.scoreScale;
+    const points = count * this.rules.pointsPerCell * this.rules.scoreScale * multiplier;
     this.score += points;
-    events.push({ type: 'cells-removed', count, points });
+    const { cols } = this.rules;
+    const x = cells.reduce((t, i) => t + (i % cols), 0) / count;
+    const y = cells.reduce((t, i) => t + Math.floor(i / cols), 0) / count;
+    events.push({ type: 'cells-removed', count, points, x, y });
   }
 
   /**
@@ -291,6 +374,7 @@ export class Simulation {
   /** A growing half breaks when any atom is in one of the 8 cells around one of its cells. */
   private checkBreaks(events: GameEvent[]): void {
     for (const a of this.atoms) {
+      if (a.captured) continue;
       for (let oy = -1; oy <= 1; oy++) {
         for (let ox = -1; ox <= 1; ox++) {
           const x = a.x + ox;
@@ -309,6 +393,8 @@ export class Simulation {
     if (!half) return;
     this.halves[slot] = null;
     for (const c of half.cells) this.grid[this.idx(c.x, c.y)] = CELL_OPEN;
+    // A break costs the chain one step, not all of it.
+    this.chain = Math.max(0, this.chain - 1);
     this.lives = Math.max(0, this.lives - 1);
     events.push({ type: 'wall-broken', slot }, { type: 'life-lost', livesLeft: this.lives });
     if (this.lives === 0 && this.status === 'playing') {

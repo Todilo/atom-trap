@@ -1,6 +1,6 @@
 /**
- * The game modes shown on the title screen. Classic, Puzzle and Daily are playable; the others are
- * placeholders so the menu, high scores and HUD are built for more than one mode (ADR-0002).
+ * The game modes shown on the title screen, all playable (ADR-0014). A mode that isn't ready yet can be
+ * listed with `available: false`: its card shows "Soon".
  * Adding a mode: give it an entry here, then a ruleset and a run kind for it.
  */
 export type GameModeId = 'classic' | 'puzzle' | 'daily' | 'arcade';
@@ -47,11 +47,10 @@ export const GAME_MODES: GameMode[] = [
   {
     id: 'arcade',
     name: 'Arcade',
-    blurb: 'Power-ups and new kinds of atoms.',
-    rules: ['Power-ups', 'New atom types', 'Combo multiplier'],
-    footnote: 'Combos · score chains',
-    available: false,
-    scoresNote: 'Arcade scores and longest combos will live here.',
+    blurb: 'Hunt the atoms: seal each one into a tiny pocket, chain your catches, race one clock.',
+    rules: ['Capture atoms', 'Chains up to ×8', 'One clock per run', 'Big catch ×2'],
+    footnote: '',
+    available: true,
   },
 ];
 

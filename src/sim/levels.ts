@@ -9,7 +9,24 @@ import { Simulation } from './simulation';
  */
 
 /** The ruleset numbers a level may change from its Classic base. */
-export type RuleTweaks = Partial<Pick<Ruleset, 'atoms' | 'lives' | 'timeLimit' | 'targetCoverage' | 'stepMs' | 'wallLimit'>>;
+export type RuleTweaks = Partial<
+  Pick<
+    Ruleset,
+    | 'atoms'
+    | 'lives'
+    | 'timeLimit'
+    | 'targetCoverage'
+    | 'stepMs'
+    | 'wallLimit'
+    | 'timeBonusPerUnit'
+    | 'bigCatchShare'
+    | 'chainWindow'
+    | 'chainMultipliers'
+    | 'captureSize'
+    | 'capturePoints'
+    | 'captureTime'
+  >
+>;
 
 export interface LevelSpec {
   /** The Classic level whose atoms, lives, time and scoring are the starting point. */

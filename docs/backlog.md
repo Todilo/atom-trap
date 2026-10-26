@@ -22,13 +22,17 @@ Open items picked up along the way, with the milestone they belong to (ADR-0010)
 | Puzzles in order of difficulty | after v1 | Reordered from the tuning bot's results; progress is saved by puzzle id. |
 | Attract-mode demo | after v1 | The game opens on the bot playing a board full-screen, "Tap to play" brings up the menu, and an idle title returns to it (ADR-0017). |
 | Daily Challenge | after v1 | One board a day from the date, par from the bot on the device, one scored try, streak and share (ADR-0017). |
+| Arcade core loop | after v1 | Capture atoms in small pockets, one run clock, chains up to ×8, floating points and implosions; own high scores (ADR-0018). A first version with random power-up tiles felt flat and was replaced. |
 
 ## Ideas for after v1
 
 | Idea | Notes |
 |---|---|
 | Pick the portrait rotation direction from the device sensors | Today it's always clockwise (ADR-0013). |
-| Arcade mode | New atom types and power-ups; needs a design pass first. |
+| Arcade: held power-ups | Dropped by captures and big catches, one slot, used when you choose: Freeze, Laser, Bomb, Slow-mo (ADR-0018). |
+| Arcade: missions | Goals that unlock atom styles and themes. |
+| Arcade: new atoms | Heavy, Fast, Splitter and Ghost, one introduced per level (ADR-0018). |
+| Tune Arcade | Pocket size, capture points, chain window and steps, and clock times are first choices. |
 | Tune puzzle pars from real play | Dev builds log attempts (`atomTrap.puzzleLog()`); adjust pars once there's enough play. |
 | Reduce motion setting | Calmer trails and flashes; atom styles like Spark ball and Firefly swarm are the busiest. |
 | Zen mode | Dropped: with no timer and no lives there was nothing to win (ADR-0014). |

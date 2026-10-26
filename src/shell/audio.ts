@@ -134,6 +134,20 @@ export class AudioEngine {
       case 'game-over':
         [64, 60, 57, 52].forEach((n, i) => this.tone({ freq: midi(n), dur: 0.5, type: 'sawtooth', vol: 0.06, delay: i * 0.22, filter: 900 }));
         return;
+      // Arcade (ADR-0018).
+      case 'chain':
+        // Each step up the chain plays a higher note, so a long chain climbs.
+        if (e.count > 1) this.tone({ freq: midi(70 + Math.min(e.count, 10) * 2), dur: 0.14, type: 'square', vol: 0.05, filter: 3500 });
+        return;
+      case 'atom-captured':
+        // An implosion: a falling sweep and a thump, then a bright chime.
+        this.tone({ freq: 900, to: 60, dur: 0.35, type: 'sawtooth', vol: 0.08, filter: 2000 });
+        this.tone({ freq: 70, to: 40, dur: 0.3, type: 'sine', vol: 0.35, delay: 0.12 });
+        [84, 91, 96].forEach((n, i) => this.tone({ freq: midi(n), dur: 0.3, type: 'triangle', vol: 0.09, delay: 0.2 + i * 0.06 }));
+        return;
+      case 'big-catch':
+        [72, 79, 84].forEach((n, i) => this.tone({ freq: midi(n), dur: 0.4, type: 'triangle', vol: 0.1, delay: 0.12 + i * 0.07 }));
+        return;
     }
   }
 

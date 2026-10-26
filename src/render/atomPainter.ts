@@ -224,6 +224,12 @@ export class AtomPainter {
     }
   }
 
+  /** Hides atom `i` (an Arcade capture took it off the board). */
+  hideAtom(i: number): void {
+    const a = this.atoms[i];
+    for (const s of [a.glow, a.body, ...a.dots]) s.visible = false;
+  }
+
   /** Forgets trails, e.g. after the board moved on screen. */
   clearTrails(): void {
     for (const a of this.atoms) {
@@ -241,6 +247,7 @@ export class AtomPainter {
   /** Draws atom `i` centred at (x, y); `diameter` is the body's size, one cell high on the board. */
   drawAtom(i: number, x: number, y: number, diameter: number, now: number): void {
     const a = this.atoms[i];
+    a.glow.visible = a.body.visible = true;
     const look = LOOKS[this.style];
     const pulse = this.style === 'pulse' ? 1 + 0.1 * Math.sin(now / 230 + i) : 1;
     a.glow.position.set(x, y);

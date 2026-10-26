@@ -1737,3 +1737,73 @@ body {
     padding: 8px 20px;
   }
 }
+
+/* Arcade's chain chip: lights up while a chain runs; its bar drains until the chain ends. */
+#hud .chip.chain {
+  width: 112px;
+}
+
+#hud .chain-value {
+  font-size: 20px;
+  color: var(--text-dim);
+}
+
+#hud .chip.chain.on {
+  border-color: var(--highlight);
+  box-shadow: 0 0 14px var(--highlight-soft);
+}
+
+#hud .chip.chain.on .chain-value {
+  color: var(--highlight);
+}
+
+#hud .chip.chain .bar .fill {
+  background: var(--highlight);
+  transition: none;
+}
+
+/* Arcade's note between boards: no input, the game moves on by itself. */
+#screen.banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+#screen .banner-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 18px 36px;
+  border-radius: 18px;
+  border: 1px solid var(--highlight);
+  background: var(--overlay);
+  box-shadow: 0 0 40px var(--highlight-soft);
+  animation: banner-in 0.25s ease-out;
+}
+
+#screen .banner-time {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 44px;
+  line-height: 1.1;
+  color: var(--highlight);
+  text-shadow: 0 0 18px var(--highlight-soft);
+}
+
+@keyframes banner-in {
+  from {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+}
+
+@media (max-height: 520px), (orientation: portrait) and (max-width: 520px) {
+  #hud .chip.chain {
+    width: 84px;
+  }
+  #hud .chain-value {
+    font-size: 15px;
+  }
+}

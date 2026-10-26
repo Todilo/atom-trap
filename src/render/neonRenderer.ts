@@ -1,4 +1,4 @@
-import { Application, Container, Graphics, Sprite } from 'pixi.js';
+import { Application, Container, Graphics, Sprite, Text } from 'pixi.js';
 import type { BoardLayout } from '../game/layout';
 import { AtomPainter, glowTexture } from './atomPainter';
 import type { AtomStyle, Theme } from './themes';
@@ -53,6 +53,11 @@ export class NeonRenderer {
   private readonly removed = new Graphics();
   private readonly edges = new Graphics();
   private readonly walls = new Graphics();
+  /** Arcade feedback (ADR-0018): implosion rings, and points rising from where cells filled. */
+  private readonly rings = new Graphics();
+  private implosions: { x: number; y: number; t0: number }[] = [];
+  private popups: { text: Text; x: number; y: number; t0: number; dur: number }[] = [];
+  private shakeAmount = 0;
   private readonly fxLayer = new Container();
   private readonly flash = new Graphics();
   private readonly glow = glowTexture();
@@ -83,8 +88,9 @@ export class NeonRenderer {
     this.atoms = new AtomPainter(this.glow, theme, 'soft');
     this.edges.blendMode = 'add';
     this.walls.blendMode = 'add';
+    this.rings.blendMode = 'add';
     this.fxLayer.blendMode = 'add';
-    app.stage.addChild(this.bg, this.removed, this.edges, this.walls, this.atoms.view, this.fxLayer, this.flash);
+    app.stage.addChild(this.bg, this.removed, this.edges, this.walls, this.atoms.view, this.rings, this.fxLayer, this.flash);
     for (let i = 0; i < 2; i++) {
       const tip = this.makeSprite(theme.hot);
       tip.visible = false;
@@ -137,7 +143,8 @@ export class NeonRenderer {
     for (let x = 1; x < cols; x++) g.moveTo(layout.x + x * layout.cellW, layout.y).lineTo(layout.x + x * layout.cellW, layout.y + layout.height);
     for (let y = 1; y < rows; y++) g.moveTo(layout.x, layout.y + y * layout.cellH).lineTo(layout.x + layout.width, layout.y + y * layout.cellH);
     g.stroke({ width: 1, color: C.grid });
-    this.flash.clear().rect(0, 0, 4096, 4096).fill(C.flash);
+    // White, tinted per use: the theme's flash colour for a lost life, its hot white for a board clear.
+    this.flash.clear().rect(0, 0, 4096, 4096).fill(0xffffff);
     this.flash.alpha = 0;
   }
 
@@ -156,7 +163,10 @@ export class NeonRenderer {
       if (this.edgesDirty) this.drawEdges(sim);
       this.drawWalls(sim, previous, alpha, now);
       this.drawAtoms(sim, previous.atoms, alpha);
-      if (sim.lives < this.prevLives) this.flashAlpha = 0.35;
+      if (sim.lives < this.prevLives) {
+        this.flash.tint = this.theme.flash;
+        this.flashAlpha = 0.35;
+      }
       this.prevLives = sim.lives;
     } else {
       this.removed.clear();
@@ -169,6 +179,7 @@ export class NeonRenderer {
     }
 
     this.updateParticles(dt);
+    this.updateFeedback(dt, now);
     this.flashAlpha = Math.max(0, this.flashAlpha - dt * 0.9);
     this.flash.alpha = this.flashAlpha;
   }
@@ -353,6 +364,7 @@ export class NeonRenderer {
       if (c?.kind === 'bounce' && !heldLastStep(i) && !contacts[c.partner]) contacts[c.partner] = { x: -c.x, y: -c.y, partner: i, kind: 'echo' };
     });
     sim.atoms.forEach((atom, i) => {
+      if (atom.captured) return this.atoms.hideAtom(i);
       const p = previous[i] ?? atom;
       let x: number;
       let y: number;
@@ -384,6 +396,75 @@ export class NeonRenderer {
     });
   }
 
+  /** Arcade: points (or a word) rising from a cell and fading out; `big` for captures and big catches. */
+  popup(text: string, cellX: number, cellY: number, big = false): void {
+    const l = this.layout;
+    if (!l) return;
+    const unit = Math.min(l.cellW, l.cellH);
+    const t = new Text({
+      text,
+      style: {
+        fontFamily: "'Chakra Petch', system-ui, sans-serif",
+        fontWeight: '700',
+        fontSize: Math.round(unit * (big ? 1.3 : 0.9)),
+        fill: big ? this.theme.hot : this.theme.wall,
+        stroke: { color: this.theme.background, width: Math.max(2, unit * 0.12) },
+      },
+    });
+    t.anchor.set(0.5);
+    this.fxLayer.addChild(t);
+    this.popups.push({ text: t, x: l.x + (cellX + 0.5) * l.cellW, y: l.y + (cellY + 0.5) * l.cellH, t0: performance.now(), dur: big ? 1300 : 900 });
+  }
+
+  /** Arcade: a captured atom implodes: a ring closing in on it, sparks, and a shake. */
+  implode(cellX: number, cellY: number): void {
+    this.implosions.push({ x: cellX, y: cellY, t0: performance.now() });
+    this.burst(cellX, cellY, this.theme.atom, 18, 1.4);
+    this.burst(cellX, cellY, this.theme.hot, 8, 0.8);
+    this.shake(0.5);
+  }
+
+  /** A short screen shake; `amount` in cells. */
+  shake(amount: number): void {
+    this.shakeAmount = Math.max(this.shakeAmount, amount);
+  }
+
+  /** A bright flash over the board, e.g. when an Arcade board clears. */
+  flashBoard(): void {
+    this.flash.tint = this.theme.hot;
+    this.flashAlpha = 0.3;
+  }
+
+  private updateFeedback(dt: number, now: number): void {
+    const l = this.layout!;
+    const unit = Math.min(l.cellW, l.cellH);
+    const g = this.rings.clear();
+    this.implosions = this.implosions.filter((m) => {
+      const k = (now - m.t0) / 450;
+      if (k >= 1) return false;
+      const cx = l.x + (m.x + 0.5) * l.cellW;
+      const cy = l.y + (m.y + 0.5) * l.cellH;
+      g.circle(cx, cy, unit * 3 * (1 - k)).stroke({ width: unit * 0.25 * (1 - k) + 1, color: this.theme.atom, alpha: 0.9 * (1 - k) });
+      g.circle(cx, cy, unit * 0.9 * (1 - k)).fill({ color: this.theme.hot, alpha: 0.7 * (1 - k) });
+      return true;
+    });
+    this.popups = this.popups.filter((p) => {
+      const k = (now - p.t0) / p.dur;
+      if (k >= 1) {
+        p.text.destroy();
+        return false;
+      }
+      p.text.position.set(p.x, p.y - unit * 2.2 * k);
+      p.text.alpha = k < 0.7 ? 1 : 1 - (k - 0.7) / 0.3;
+      p.text.scale.set(k < 0.12 ? 0.6 + (k / 0.12) * 0.4 : 1);
+      return true;
+    });
+    // The whole stage jitters while a shake fades out.
+    this.shakeAmount = Math.max(0, this.shakeAmount - dt * 2.5);
+    const s = this.shakeAmount * unit;
+    this.app.stage.position.set((Math.random() - 0.5) * s, (Math.random() - 0.5) * s);
+  }
+
   /**
    * If atom `i` bounced off, or was held up by, a neighbouring atom this step, the pixel offset that
    * brings the two bodies into contact. The simulation resolves collisions between neighbouring cells,
@@ -399,7 +480,7 @@ export class NeonRenderer {
     const others = bounced ? previous : atoms;
     const l = this.layout!;
     for (let j = 0; j < others.length; j++) {
-      if (j === i) continue;
+      if (j === i || others[j].captured) continue;
       const o = others[j];
       const ox = o.x - p.x;
       const oy = o.y - p.y;

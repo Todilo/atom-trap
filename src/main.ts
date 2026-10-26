@@ -5,7 +5,7 @@ import './style.css';
 import { registerSW } from 'virtual:pwa-register';
 import { PointerInput } from './game/input';
 import { layoutBoard, wallOriginAt } from './game/layout';
-import { Progress, Run, type RunKind } from './game/run';
+import { Progress, Run, type RunKind, type RunMode } from './game/run';
 import { NeonRenderer, snapshot, type Snapshot } from './render/neonRenderer';
 import { modeById, type GameModeId } from './game/modes';
 import { BotPlayer } from './game/bot';
@@ -22,6 +22,7 @@ import {
   highScoresScreen,
   levelClearedScreen,
   pauseScreen,
+  arcadeClearedBanner,
   attractScreen,
   dailyResultScreen,
   puzzleClearedScreen,
@@ -36,7 +37,7 @@ import {
 } from './shell/screens';
 import { localStore } from './shell/storage';
 import type { ClassicSpeed } from './sim/ruleset';
-import type { Simulation } from './sim/simulation';
+import type { GameEvent, Simulation } from './sim/simulation';
 
 // Classic (ADR-0010) and Puzzle modes with the neon look (ADR-0004) and synth audio (ADR-0008).
 
@@ -58,6 +59,9 @@ const hud = {
   scoreLabel: $('hud-score-label'),
   stars: $('hud-stars'),
   timeChip: $('hud-time-chip'),
+  chain: $('hud-chain'),
+  chainValue: $('hud-chain-value'),
+  chainBar: $('hud-chain-bar'),
   unscored: $('hud-unscored'),
   time: $('hud-time'),
   timeBar: $('hud-time-bar'),
@@ -67,6 +71,12 @@ const screenEl = $('screen');
 const hudEl = $('hud');
 const host = $('app');
 const progress = new Progress(localStore);
+const arcadeProgress = new Progress(localStore, 'arcade');
+const progressFor = (m: RunMode) => (m === 'arcade' ? arcadeProgress : progress);
+const scoreTables = () => ({
+  classic: { scores: progress.highScores, highestLevel: progress.highestLevel },
+  arcade: { scores: arcadeProgress.highScores, highestLevel: arcadeProgress.highestLevel },
+});
 const puzzleProgress = new PuzzleProgress(localStore);
 const dailyProgress = new DailyProgress(localStore);
 
@@ -226,7 +236,7 @@ const sim = (): Simulation | null => run?.sim ?? puzzle?.sim ?? null;
 let redraw: (() => void) | null = null;
 
 /** A page covers the whole stage; a dialog sits over the dimmed board. */
-function showScreen(html: string | null, kind: 'page' | 'dialog' | 'attract-screen' = 'dialog', draw: (() => void) | null = null): void {
+function showScreen(html: string | null, kind: 'page' | 'dialog' | 'attract-screen' | 'banner' = 'dialog', draw: (() => void) | null = null): void {
   // Redrawing the same screen (a switch flipped) keeps its scroll position.
   const scroll = draw && draw === redraw ? screenEl.scrollTop : 0;
   redraw = draw;
@@ -278,12 +288,12 @@ function showMenu(): void {
   setHint(false);
   void checkForUpdate().catch(() => {});
   const draw = () =>
-    showScreen(titleScreen(progress.highestLevel, prefs(), progress.highScores[0]?.score ?? null, puzzleSummary(), dailySummary()), 'page', draw);
+    showScreen(titleScreen(prefs(), scoreTables(), puzzleSummary(), dailySummary()), 'page', draw);
   draw();
 }
 
 function showScores(tab: GameModeId): void {
-  const draw = () => showScreen(highScoresScreen(progress.highScores, tab, progress.highestLevel, puzzleSummary(), dailySummary()), 'page', draw);
+  const draw = () => showScreen(highScoresScreen(scoreTables(), tab, puzzleSummary(), dailySummary()), 'page', draw);
   draw();
 }
 
@@ -343,7 +353,7 @@ function showPause(): void {
         canRestart: !puzzle.daily?.scored,
       }
     : {
-        where: `Classic · Level ${run!.level}`,
+        where: `${run!.mode === 'arcade' ? 'Arcade' : 'Classic'} · Level ${run!.level}`,
         stats: [
           ['Score', Math.round(run!.score).toLocaleString('en-US')],
           ['Lives', String(s.lives)],
@@ -355,9 +365,11 @@ function showPause(): void {
   draw();
 }
 
+/** Starts a Classic or Arcade run, as selected on the title screen (Arcade plays at Fast). */
 function startRun(kind: RunKind): void {
+  const runMode: RunMode = prefsStore.mode === 'arcade' ? 'arcade' : 'classic';
   puzzle = null;
-  run = new Run(kind, progress, prefsStore.speed);
+  run = new Run(kind, progressFor(runMode), runMode === 'arcade' ? 'fast' : prefsStore.speed);
   beginLevel();
 }
 
@@ -527,8 +539,9 @@ function showGameOver(): void {
 function saveName(): void {
   if (!gameOver?.rank) return;
   const value = (document.getElementById('name-input') as HTMLInputElement | null)?.value ?? '';
-  progress.nameScore(gameOver.rank, value);
-  gameOver.savedName = progress.highScores[gameOver.rank - 1]?.name ?? '';
+  const table = progressFor(run!.mode);
+  table.nameScore(gameOver.rank, value);
+  gameOver.savedName = table.highScores[gameOver.rank - 1]?.name ?? '';
   showGameOver();
 }
 
@@ -602,6 +615,7 @@ function handleStepEvents(s: Simulation): void {
   for (const e of s.step()) {
     audio.event(e);
     haptics.event(e);
+    if (run?.mode === 'arcade') arcadeFeedback(s, e);
     if (puzzle?.daily && (e.type === 'level-cleared' || e.type === 'game-over')) {
       const cleared = e.type === 'level-cleared';
       mode = cleared ? 'cleared' : 'over';
@@ -623,6 +637,14 @@ function handleStepEvents(s: Simulation): void {
       logPuzzleAttempt(s, false);
       mode = 'over';
       showScreen(puzzleFailedScreen(e.reason, puzzle.index));
+    } else if (e.type === 'level-cleared' && run?.mode === 'arcade') {
+      // Arcade keeps moving: a flash and the time gained, then the next board by itself.
+      mode = 'cleared';
+      renderer.flashBoard();
+      showScreen(arcadeClearedBanner(run.level, Math.round(run.clearTimeBonus / 10)), 'banner');
+      setTimeout(() => {
+        if (mode === 'cleared' && run?.mode === 'arcade') nextLevel();
+      }, 1500);
     } else if (e.type === 'level-cleared') {
       mode = 'cleared';
       showScreen(
@@ -689,6 +711,22 @@ function drawDemo(deltaMS: number): void {
   audio.setGrowing(0);
 }
 
+/** Arcade feedback (ADR-0018): points rising where cells filled, implosions, and shakes. */
+let lastFill = { x: 0, y: 0 };
+function arcadeFeedback(s: Simulation, e: GameEvent): void {
+  const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
+  if (e.type === 'cells-removed') {
+    lastFill = { x: e.x, y: e.y };
+    renderer.popup(`+${fmt(e.points)}${s.chainMultiplier > 1 ? ` ×${s.chainMultiplier}` : ''}`, e.x, e.y);
+  } else if (e.type === 'atom-captured') {
+    renderer.implode(e.x, e.y);
+    renderer.popup(`Captured +${fmt(e.points)}`, e.x, e.y - 1, true);
+  } else if (e.type === 'big-catch') {
+    renderer.popup('Big catch ×2', lastFill.x, lastFill.y + 1.5, true);
+    renderer.shake(0.3);
+  }
+}
+
 /** Lives show as dots up to this many; above it, as a number. */
 const MAX_LIFE_DOTS = 8;
 let shownLives = '';
@@ -696,10 +734,11 @@ let shownStars = -1;
 
 function updateHud(): void {
   const s = sim();
-  hud.mode.textContent = puzzle?.daily ? 'Daily' : puzzle ? 'Puzzle' : 'Classic';
+  hud.mode.textContent = puzzle?.daily ? 'Daily' : puzzle ? 'Puzzle' : run?.mode === 'arcade' ? 'Arcade' : 'Classic';
   hud.level.textContent = puzzle?.daily ? `#${dayNumber(puzzle.daily.key)}` : String(puzzle ? puzzle.index! + 1 : (run?.level ?? progress.highestLevel));
   const lives = s?.lives ?? 0;
-  const maxLives = s?.rules.lives ?? 0;
+  // A +1 life power-up can take lives above the level's start.
+  const maxLives = Math.max(s?.rules.lives ?? 0, lives);
   const livesKey = `${lives}/${maxLives}`;
   if (livesKey !== shownLives) {
     shownLives = livesKey;
@@ -716,6 +755,15 @@ function updateHud(): void {
   hud.targetMark.style.left = `${target}%`;
   // Puzzles show walls used against par, and the stars still within reach, instead of a score.
   hud.scoreLabel.textContent = puzzle ? `Walls · par ${puzzle.def.par[0]}` : 'Score';
+  // Arcade's chain: the multiplier, and a bar draining until the chain ends.
+  hud.chain.hidden = run?.mode !== 'arcade';
+  if (run?.mode === 'arcade' && s) {
+    const active = s.chain > 0;
+    const left = active ? (s.chainEndsAt - s.steps + 1 - accumulator / s.rules.stepMs) / s.rules.chainWindow : 0;
+    hud.chainValue.textContent = `×${s.chainMultiplier}`;
+    hud.chainBar.style.width = `${Math.max(0, Math.min(1, left)) * 100}%`;
+    hud.chain.classList.toggle('on', active);
+  }
   hud.score.textContent = puzzle ? String(s?.wallsPlaced ?? 0) : Math.round(run?.score ?? 0).toLocaleString('en-US');
   const reachable = puzzle && s ? starsFor(puzzle.def, s.wallsPlaced) : -1;
   if (reachable !== shownStars) {
@@ -727,7 +775,7 @@ function updateHud(): void {
   hud.timeChip.hidden = !!s && !s.rules.timeLimit;
   const time = s?.timeLeft ?? 0;
   hud.time.textContent = String(time);
-  hud.timeBar.style.width = `${s ? (100 * time) / s.rules.timeLimit : 0}%`;
+  hud.timeBar.style.width = `${s ? Math.min(100, (100 * time) / s.rules.timeLimit) : 0}%`;
   hud.timeBar.classList.toggle('low', !!s && time <= s.rules.timeWarningAt);
   hud.pause.hidden = mode !== 'playing' && mode !== 'paused';
   // The HUD belongs to a game; the menus (and the demo behind the title) have none.

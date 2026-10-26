@@ -27,6 +27,20 @@ export interface Ruleset {
   scoreScale: number;
   /** Walls the player may place; 0 means no limit (Classic). Running out before clearing ends the level. */
   wallLimit: number;
+  /** Arcade: one fill of at least this share of the clearable board scores double; 0 is off. */
+  bigCatchShare: number;
+  /**
+   * Arcade chain (ADR-0018): a fill or capture within this many steps of the last one extends the
+   * chain, and points are multiplied by its value (the last holds from then on). Steps with a wall
+   * growing don't count, and a break drops the chain one step. 0 means no chains.
+   */
+  chainWindow: number;
+  chainMultipliers: number[];
+  /** Arcade: an atom sealed into a pocket of at most this many cells is captured; 0 means never. */
+  captureSize: number;
+  /** Points for each captured atom (before speed and chain), and timer units it adds. */
+  capturePoints: number;
+  captureTime: number;
 }
 
 export type ClassicSpeed = 'fast' | 'slow';
@@ -63,6 +77,12 @@ export function classicRuleset(level: number, speed: ClassicSpeed = 'fast'): Rul
     timeBonusPerUnit: 1,
     scoreScale: slow ? 0.5 : 1,
     wallLimit: 0,
+    bigCatchShare: 0,
+    chainWindow: 0,
+    chainMultipliers: [1],
+    captureSize: 0,
+    capturePoints: 0,
+    captureTime: 0,
   };
 }
 

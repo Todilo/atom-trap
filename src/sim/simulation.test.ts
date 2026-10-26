@@ -245,3 +245,106 @@ describe('Level end', () => {
     expect(types(run(sim, 10)).filter((t) => t === 'time-warning')).toHaveLength(1);
   });
 });
+
+describe('Arcade rules (ADR-0018)', () => {
+  const arcade = (o: Partial<Ruleset> = {}) => rules({ chainWindow: 30, chainMultipliers: [1, 2, 3], ...o });
+  // A vertical wall at x = 10 with the atom far right: half B (9 cells) completes first, then half A
+  // (11 cells) closes off the 200-cell left side.
+  const wallAtTen = (sim: Simulation) => {
+    sim.placeWall(10, 10, 'vertical');
+    return run(sim, 12);
+  };
+  // A one-row board: atoms can never move vertically, so they stay put.
+  const row = (o: Partial<Ruleset> = {}) => arcade({ cols: 8, rows: 1, captureSize: 3, capturePoints: 100, captureTime: 30, ...o });
+
+  it('multiplies points by the chain of fills in quick succession', () => {
+    const sim = new Simulation(arcade(), { atoms: [{ x: 27, y: 10, dx: 1, dy: 1 }] });
+    const events = wallAtTen(sim);
+    expect(sim.chain).toBe(2);
+    expect(sim.chainMultiplier).toBe(2);
+    expect(sim.score).toBe(9 * 7 + 211 * 7 * 2);
+    expect(events.filter((e) => e.type === 'chain')).toEqual([
+      { type: 'chain', count: 1 },
+      { type: 'chain', count: 2 },
+    ]);
+  });
+
+  it('ends the chain after a pause, and a break drops it one step', () => {
+    const sim = new Simulation(arcade({ chainWindow: 5 }), { atoms: [{ x: 27, y: 10, dx: 1, dy: 1 }] });
+    wallAtTen(sim);
+    run(sim, 6);
+    expect(sim.chain).toBe(0);
+    expect(sim.chainMultiplier).toBe(1);
+
+    const broken = new Simulation(arcade(), { atoms: [{ x: 12, y: 3, dx: -1, dy: 1 }] });
+    broken.chain = 3;
+    broken.chainEndsAt = 99;
+    broken.placeWall(10, 5, 'vertical');
+    run(broken, 1);
+    expect(broken.chain).toBe(2);
+  });
+
+  it("doesn't run the chain down while a wall is growing", () => {
+    const sim = new Simulation(arcade({ chainWindow: 3 }), { atoms: [{ x: 27, y: 19, dx: 1, dy: 1 }] });
+    sim.chain = 1;
+    sim.chainEndsAt = 3;
+    // A long wall: both halves grow for several steps.
+    sim.placeWall(14, 10, 'vertical');
+    run(sim, 6);
+    expect(sim.halves.a).not.toBeNull();
+    expect(sim.chain).toBe(1);
+  });
+
+  it('doubles a big catch', () => {
+    const sim = new Simulation(arcade({ chainWindow: 0, bigCatchShare: 0.3 }), { atoms: [{ x: 27, y: 10, dx: 1, dy: 1 }] });
+    const events = wallAtTen(sim);
+    expect(events).toContainEqual({ type: 'big-catch', cells: 211 });
+    expect(sim.score).toBe(9 * 7 + 211 * 7 * 2);
+  });
+
+  it('captures an atom sealed into a small pocket, filling it and adding points and time', () => {
+    const sim = new Simulation(row(), { atoms: [{ x: 1, y: 0, dx: 1, dy: 1 }, { x: 6, y: 0, dx: 1, dy: 1 }] });
+    const time = sim.timeLeft;
+    sim.placeWall(3, 0, 'vertical');
+    const events = sim.step();
+    // Cells 0-2 (3 cells) hold the first atom: captured. Cells 4-7 (4 cells) are too big a pocket.
+    expect(events).toContainEqual({ type: 'atom-captured', x: 1, y: 0, points: 100 });
+    expect(sim.atoms[0].captured).toBe(true);
+    expect(sim.atoms[1].captured).toBeUndefined();
+    expect(sim.liveAtoms).toBe(1);
+    expect(sim.cellAt(1, 0)).toBe(CELL_REMOVED);
+    expect(sim.cellAt(5, 0)).toBe(CELL_OPEN);
+    expect(sim.timeLeft).toBe(time - 1 + 30);
+  });
+
+  it('clears the board when the last atom is captured', () => {
+    const sim = new Simulation(row({ targetCoverage: 1 }), { atoms: [{ x: 1, y: 0, dx: 1, dy: 1 }, { x: 6, y: 0, dx: 1, dy: 1 }] });
+    sim.placeWall(3, 0, 'vertical');
+    sim.step();
+    sim.placeWall(5, 0, 'vertical');
+    const events = sim.step();
+    expect(sim.liveAtoms).toBe(0);
+    expect(types(events)).toContain('level-cleared');
+    expect(sim.status).toBe('cleared');
+  });
+
+  it('reports where cells were removed, for showing the points there', () => {
+    const sim = new Simulation(row({ captureSize: 0 }), { atoms: [{ x: 1, y: 0, dx: 1, dy: 1 }] });
+    sim.placeWall(3, 0, 'vertical');
+    const removed = sim.step().find((e) => e.type === 'cells-removed');
+    // The wall cell (3) and the empty right side (4-7).
+    expect(removed).toMatchObject({ count: 5, x: 5, y: 0 });
+  });
+
+  it('leaves Classic without chains, big catches or captures', () => {
+    const sim = new Simulation(level1, { atoms: [{ x: 27, y: 10, dx: 1, dy: 1 }] });
+    const events = wallAtTen(sim);
+    expect(sim.score).toBe(220 * 7);
+    expect(types(events)).not.toContain('chain');
+    expect(types(events)).not.toContain('big-catch');
+    const small = new Simulation(rules({ cols: 8, rows: 1 }), { atoms: [{ x: 1, y: 0, dx: 1, dy: 1 }, { x: 6, y: 0, dx: 1, dy: 1 }] });
+    small.placeWall(3, 0, 'vertical');
+    small.step();
+    expect(small.liveAtoms).toBe(2);
+  });
+});
