@@ -1,6 +1,7 @@
 import type { KeyValueStore } from '../shell/storage';
-import { classicRuleset, type ClassicSpeed } from '../sim/ruleset';
-import { Simulation } from '../sim/simulation';
+import { createLevel } from '../sim/levels';
+import type { ClassicSpeed } from '../sim/ruleset';
+import type { Simulation } from '../sim/simulation';
 
 /**
  * A run is one play-through (ADR-0007). A scored run starts at level 1 and can enter the high-score
@@ -105,6 +106,6 @@ export class Run {
 
   private startLevel(): Simulation {
     this.progress.noteLevelStarted(this.level);
-    return new Simulation(classicRuleset(this.level, this.speed), { seed: this.seed() });
+    return createLevel({ level: this.level, speed: this.speed, seed: this.seed() });
   }
 }

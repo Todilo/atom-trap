@@ -9,6 +9,8 @@ import { Progress, Run, type RunKind } from './game/run';
 import { NeonRenderer } from './render/neonRenderer';
 import { modeById, type GameModeId } from './game/modes';
 import { AtomPreview } from './render/atomPreview';
+import { createLevel } from './sim/levels';
+import { LAYOUTS } from './sim/layouts';
 import { ATOM_STYLES, atomStyleById, cssVariables, themeById, type AtomStyle, type Theme } from './render/themes';
 import { AudioEngine, type AudioSettings } from './shell/audio';
 import { Haptics } from './shell/haptics';
@@ -454,7 +456,24 @@ updateEl.addEventListener('click', (e) => {
 // Dev-only hook for inspecting the running game from the browser console.
 if (import.meta.env.DEV) Object.defineProperty(window, 'atomTrap', {
     // `fakeUpdate()` shows the new-version bar, since the dev server has no service worker.
-    get: () => ({ run, mode, layout, progress, renderer, audio, haptics, applyTheme, fakeUpdate: () => (updateReady = true) }),
+    // `tryLayout('cross')` swaps the current (or a new, unscored) level for that board layout.
+    get: () => ({
+      run,
+      mode,
+      layout,
+      progress,
+      renderer,
+      audio,
+      haptics,
+      applyTheme,
+      fakeUpdate: () => (updateReady = true),
+      layouts: LAYOUTS.map((l) => l.id),
+      tryLayout: (id: string) => {
+        if (!run) startRun('continue');
+        run!.sim = createLevel({ level: run!.level, speed: prefsStore.speed, layout: id, seed: (Math.random() * 0xffffffff) >>> 0 });
+        beginLevel();
+      },
+    }),
   });
 
 showMenu();

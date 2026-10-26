@@ -44,6 +44,8 @@ export interface SimulationOptions {
   seed?: number;
   /** Explicit atom placement (tests); otherwise atoms are placed randomly from the seed. */
   atoms?: Atom[];
+  /** Cells that start filled, one entry per cell row by row (1 = filled), e.g. from src/sim/layouts.ts. */
+  filled?: Uint8Array;
 }
 
 export class Simulation {
@@ -54,7 +56,13 @@ export class Simulation {
   timeLeft: number;
   /** Points earned on this level, bonus included. */
   score = 0;
+  /** Cells removed during play; cells filled at the start are not counted. */
   removedCells = 0;
+  /**
+   * Cells filled before play: the layout's, plus any open pocket that got no atom. They are not part
+   * of the board you clear, so coverage is measured over the rest.
+   */
+  readonly startFilled: number = 0;
   status: LevelStatus = 'playing';
   steps = 0;
 
@@ -69,15 +77,27 @@ export class Simulation {
     this.occupant = new Int16Array(rules.cols * rules.rows).fill(-1);
     this.lives = rules.lives;
     this.timeLeft = rules.timeLimit;
+    let filled = 0;
+    if (options.filled) {
+      if (options.filled.length !== this.grid.length) throw new Error('Filled cells do not match the board size');
+      options.filled.forEach((f, i) => {
+        if (!f) return;
+        this.grid[i] = CELL_REMOVED;
+        filled++;
+      });
+    }
     this.atoms = options.atoms ? options.atoms.map((a) => ({ ...a })) : this.placeAtoms(options.seed ?? 1);
     this.atoms.forEach((a, i) => {
-      if (!this.inBounds(a.x, a.y) || this.occupant[this.idx(a.x, a.y)] !== -1) throw new Error(`Bad atom position ${a.x},${a.y}`);
+      if (!this.isFree(a.x, a.y)) throw new Error(`Bad atom position ${a.x},${a.y}`);
       this.occupant[this.idx(a.x, a.y)] = i;
     });
+    // A layout pocket that got no atom would be filled, for free points, by the first wall: fill it now.
+    if (filled) this.startFilled = filled + this.fillEmptyRegions();
   }
 
+  /** The share of the clearable board (everything not filled at the start) that has been removed. */
   get coverage(): number {
-    return this.removedCells / (this.rules.cols * this.rules.rows);
+    return this.removedCells / (this.rules.cols * this.rules.rows - this.startFilled);
   }
 
   cellAt(x: number, y: number): number {
@@ -286,7 +306,7 @@ export class Simulation {
     while (out.length < atoms) {
       const x = Math.floor(rng() * cols);
       const y = Math.floor(rng() * rows);
-      if (taken.has(this.idx(x, y))) continue;
+      if (taken.has(this.idx(x, y)) || this.grid[this.idx(x, y)] !== CELL_OPEN) continue;
       taken.add(this.idx(x, y));
       out.push({ x, y, dx: rng() < 0.5 ? -1 : 1, dy: rng() < 0.5 ? -1 : 1 });
     }
