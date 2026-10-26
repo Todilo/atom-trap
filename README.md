@@ -4,6 +4,14 @@
 
 **Play:** https://todilo.github.io/atom-trap/. On Android, open it in Chrome and choose *Install app*.
 
+## How to play
+
+- **Goal:** trap the bouncing atoms by building walls. Clear 75% of the chamber to reach the next level, and each level adds an atom.
+- **Touch:** put your finger where a wall should start, then swipe. Sideways builds a horizontal wall, up or down a vertical one.
+- **Mouse:** left-click builds a wall, right-click switches between vertical and horizontal.
+- **Careful:** a wall is fragile while it grows. An atom that touches it breaks it and costs a life. Bigger clears earn bonus points for coverage above 80% and 90%, lives left and time left.
+- **Continue** starts at your highest level, but the score doesn't count for the high-score table.
+
 ## Develop
 
 ```bash

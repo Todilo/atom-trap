@@ -128,7 +128,9 @@ hud.pause.addEventListener('click', () => (mode === 'paused' ? resume() : pause(
 
 let layout = layoutBoard(28, 20, 0, 0, 1, 1);
 function relayout(): void {
-  const { width, height } = host.getBoundingClientRect();
+  // Layout size, not the on-screen box: in portrait the stage is drawn rotated (ADR-0013).
+  const width = host.clientWidth;
+  const height = host.clientHeight;
   const pad = 8;
   layout = layoutBoard(28, 20, pad, pad, width - 2 * pad, height - 2 * pad);
   renderer.setLayout(layout, 28, 20);

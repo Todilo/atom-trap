@@ -22,8 +22,31 @@ body {
   -webkit-user-select: none;
 }
 
-#hud {
+/* The game's own landscape frame. Children are positioned inside it. */
+#stage {
   position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+
+/*
+ * Portrait (for example a browser tab with auto-rotate off): draw the stage turned 90° clockwise,
+ * so turning the phone sideways shows it upright (ADR-0013). Input is mapped back in src/game/input.ts.
+ */
+@media (orientation: portrait) {
+  #stage {
+    inset: auto;
+    top: 0;
+    left: 100dvw;
+    width: 100dvh;
+    height: 100dvw;
+    transform: rotate(90deg);
+    transform-origin: top left;
+  }
+}
+
+#hud {
+  position: absolute;
   top: env(safe-area-inset-top);
   left: env(safe-area-inset-left);
   right: env(safe-area-inset-right);
@@ -43,7 +66,7 @@ body {
 
 /* Dynamic viewport units, so the game fits under the browser's address bar too. */
 #app {
-  position: fixed;
+  position: absolute;
   top: calc(env(safe-area-inset-top) + var(--hud-height));
   left: env(safe-area-inset-left);
   right: env(safe-area-inset-right);
@@ -71,7 +94,7 @@ body {
 }
 
 #screen {
-  position: fixed;
+  position: absolute;
   inset: 0;
   display: flex;
   flex-direction: column;
@@ -171,21 +194,4 @@ body {
 #screen .bonus .total td {
   border-top: 1px solid rgba(62, 232, 255, 0.4);
   color: var(--accent);
-}
-
-#rotate {
-  position: fixed;
-  inset: 0;
-  display: none;
-  place-items: center;
-  background: var(--bg);
-  font-size: 1.25rem;
-  text-align: center;
-  padding: 16px;
-}
-
-@media (orientation: portrait) {
-  #rotate {
-    display: grid;
-  }
 }

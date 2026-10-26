@@ -10,7 +10,7 @@ The board's shape is part of the gameplay balance: atom travel distances, wall g
 ## Decision
 
 - Classic mode uses a **fixed board** in the original game's proportions, measured in **cells** (measured from the original: **28 × 20 cells**, see `docs/classic-rules.md` §1. The original's cells are 16 × 12 px, not square, and ADR-0009 keeps that shape: ≈ 1.87:1).
-- The game runs in **landscape only**. The PWA manifest sets the landscape orientation. When the phone is held upright, the shell shows a "rotate your device" screen and pauses the game.
+- The game runs in **landscape only**. The PWA manifest sets the landscape orientation. When the phone is held upright, the shell shows a "rotate your device" screen and pauses the game. *(Superseded by ADR-0013: in portrait the game is drawn turned 90° instead.)*
 - The board is scaled uniformly to fit the screen. The leftover space (letterbox areas) is used for the HUD (level, lives, coverage, timer, score), not for board space.
 
 ## Consequences

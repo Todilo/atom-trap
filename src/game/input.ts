@@ -14,6 +14,17 @@ export function classifySwipe(dx: number, dy: number, threshold = SWIPE_THRESHOL
   return Math.abs(dx) >= Math.abs(dy) ? 'horizontal' : 'vertical';
 }
 
+const portrait = typeof window === 'undefined' ? null : window.matchMedia('(orientation: portrait)');
+
+/**
+ * Screen point → element-local point. In portrait the whole game is drawn turned 90° clockwise
+ * (ADR-0013), so the element's x axis runs down the screen and its y axis runs right to left.
+ */
+export function toLocal(clientX: number, clientY: number, rect: { left: number; top: number; right: number }, rotated: boolean): { x: number; y: number } {
+  if (!rotated) return { x: clientX - rect.left, y: clientY - rect.top };
+  return { x: clientY - rect.top, y: rect.right - clientX };
+}
+
 export interface InputHandlers {
   /** Origin in CSS pixels relative to the element. */
   place(x: number, y: number, orientation: Orientation): void;
@@ -40,7 +51,7 @@ export class PointerInput {
 
   private local(e: PointerEvent): { x: number; y: number } {
     const r = this.el.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top };
+    return toLocal(e.clientX, e.clientY, r, portrait?.matches ?? false);
   }
 
   private onDown = (e: PointerEvent): void => {
