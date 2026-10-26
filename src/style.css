@@ -1650,3 +1650,7 @@ body {
     height: 36px;
   }
 }
+
+#screen .version-row button {
+  flex: none;
+}

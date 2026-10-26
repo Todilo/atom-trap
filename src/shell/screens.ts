@@ -162,7 +162,35 @@ export const ATOM_PAGE_SIZE = 3;
  * `atomPage` picks which atom styles show. Each one gets a canvas that the shell fills with a live
  * preview drawn by the game's own atom painter (`data-atom-preview`).
  */
-export function settingsScreen(prefs: Prefs, hapticsSupported: boolean, back: 'menu' | 'pause', atomPage: number): string {
+/** The version row in Settings: `ready` once a new version has downloaded; `unavailable` without offline support (dev). */
+export interface UpdateInfo {
+  version: string;
+  status: 'idle' | 'checking' | 'latest' | 'failed' | 'ready' | 'unavailable';
+}
+
+function updateRow(u: UpdateInfo): string {
+  const note = {
+    idle: '',
+    checking: '',
+    latest: 'You have the latest version.',
+    failed: 'Couldn’t check. Are you offline?',
+    ready: 'A new version is ready.',
+    unavailable: 'Updates work in the deployed game.',
+  }[u.status];
+  const action =
+    u.status === 'ready'
+      ? button('apply-update', `${icon.restart}Reload to update`, 'primary small')
+      : u.status === 'unavailable'
+        ? ''
+        : button('check-update', u.status === 'checking' ? 'Checking…' : 'Check for updates', 'secondary small', u.status === 'checking' ? 'disabled' : '');
+  return `
+    <div class="setting version-row">
+      <div><div class="setting-label">Version</div><div class="setting-hint">${u.version}${note ? ` · ${note}` : ''}</div></div>
+      ${action}
+    </div>`;
+}
+
+export function settingsScreen(prefs: Prefs, hapticsSupported: boolean, back: 'menu' | 'pause', atomPage: number, update: UpdateInfo): string {
   const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
   const swatches = THEMES.map((t) => {
     const on = t.id === prefs.theme;
@@ -207,6 +235,7 @@ export function settingsScreen(prefs: Prefs, hapticsSupported: boolean, back: 'm
           ${toggle('toggle-music', 'Music', 'Ambient synth soundtrack', prefs.music)}
           ${toggle('toggle-sfx', 'Sound effects', 'Walls, breaks and captures', prefs.sfx)}
           ${hapticsSupported ? toggle('toggle-haptics', 'Vibration', 'On touch devices', prefs.haptics) : ''}
+          ${updateRow(update)}
           <div class="panel-foot">${button('show-hint', 'Show the first-play hint again', 'secondary small')}</div>
         </section>
       </div>

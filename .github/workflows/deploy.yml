@@ -25,7 +25,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npm run build
+      # The version Settings shows, so it's clear which build a device is running.
+      - run: VITE_APP_VERSION="$(git rev-parse --short HEAD) · $(date -u +%Y-%m-%d)" npm run build
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:

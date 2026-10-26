@@ -148,9 +148,47 @@ function showScreen(html: string | null, kind: 'page' | 'dialog' = 'dialog', dra
   screenEl.scrollTop = scroll;
 }
 
+/**
+ * Asks the server for a new version. A phone keeps the game open for days, and switching back to it
+ * doesn't reload the page, so this also runs on resume and on the title screen, at most once a minute.
+ * Resolves once a new version has had time to download; `updateReady` then says whether one did.
+ */
+let lastUpdateCheck = 0;
+async function checkForUpdate(force = false): Promise<void> {
+  if (!swRegistration || (!force && Date.now() - lastUpdateCheck < 60_000)) return;
+  lastUpdateCheck = Date.now();
+  await swRegistration.update();
+  const installing = swRegistration.installing;
+  if (installing) {
+    await new Promise<void>((resolve) => {
+      const done = () => installing.state !== 'installing' && resolve();
+      installing.addEventListener('statechange', done);
+      setTimeout(resolve, 20_000);
+    });
+    // The page hears about the waiting version just after it installs.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+}
+
+/** The Settings row's state while the player checks for updates by hand. */
+let updateCheck: 'idle' | 'checking' | 'latest' | 'failed' = 'idle';
+
+async function checkForUpdateNow(): Promise<void> {
+  updateCheck = 'checking';
+  redrawSettings();
+  try {
+    await checkForUpdate(true);
+    updateCheck = 'latest';
+  } catch {
+    updateCheck = 'failed';
+  }
+  redrawSettings();
+}
+
 function showMenu(): void {
   mode = 'menu';
   setHint(false);
+  void checkForUpdate().catch(() => {});
   const draw = () =>
     showScreen(titleScreen(progress.highestLevel, prefs(), progress.highScores[0]?.score ?? null, puzzleSummary()), 'page', draw);
   draw();
@@ -179,7 +217,11 @@ function showSettings(): void {
   const from = mode === 'paused' ? 'pause' : 'menu';
   atomPage = Math.floor(ATOM_STYLES.findIndex((s) => s.id === atomStyle) / ATOM_PAGE_SIZE);
   const draw = () => {
-    showScreen(settingsScreen(prefs(), haptics.supported, from, atomPage), 'page', draw);
+    const update = {
+      version: import.meta.env.VITE_APP_VERSION ?? 'local build',
+      status: !swRegistration ? ('unavailable' as const) : updateReady ? ('ready' as const) : updateCheck,
+    };
+    showScreen(settingsScreen(prefs(), haptics.supported, from, atomPage, update), 'page', draw);
     void showAtomPreviews();
   };
   draw();
@@ -312,6 +354,10 @@ screenEl.addEventListener('click', (e) => {
       applyTheme(themeById(arg));
       localStore.set('theme', theme.id);
       return redrawSettings();
+    case 'check-update':
+      return void checkForUpdateNow();
+    case 'apply-update':
+      return void updateSW(true);
     case 'show-hint':
       localStore.set('hintSeen', false);
       (e.target as HTMLElement).closest('button')!.textContent = 'The hint shows on your next game';
@@ -408,6 +454,7 @@ document.addEventListener('visibilitychange', () => {
     audio.suspend();
   } else {
     audio.resume();
+    void checkForUpdate().catch(() => {});
   }
 });
 
@@ -529,11 +576,15 @@ function updateHud(): void {
 // A new deploy is downloaded in the background; the player chooses when to switch to it.
 const updateEl = $('update');
 let updateReady = false;
+let swRegistration: ServiceWorkerRegistration | undefined;
 const updateSW = registerSW({
   immediate: true,
   onNeedRefresh: () => (updateReady = true),
-  // The browser only checks for a new version when the game is opened, so also check hourly while it stays open.
-  onRegisteredSW: (_url, registration) => registration && setInterval(() => registration.update(), 60 * 60 * 1000),
+  onRegisteredSW: (_url, registration) => {
+    swRegistration = registration;
+    // Opening the game checks for a new version; also check hourly while it stays open.
+    if (registration) setInterval(() => void checkForUpdate(), 60 * 60 * 1000);
+  },
 });
 updateEl.addEventListener('click', (e) => {
   const action = (e.target as HTMLElement).closest<HTMLElement>('[data-action]')?.dataset.action;
