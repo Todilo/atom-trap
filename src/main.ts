@@ -4,7 +4,7 @@ import '@fontsource/chakra-petch/latin-700.css';
 import './style.css';
 import { registerSW } from 'virtual:pwa-register';
 import { PointerInput } from './game/input';
-import { cellAt, layoutBoard } from './game/layout';
+import { layoutBoard, wallOriginAt } from './game/layout';
 import { Progress, Run, type RunKind } from './game/run';
 import { NeonRenderer, snapshot, type Snapshot } from './render/neonRenderer';
 import { modeById, type GameModeId } from './game/modes';
@@ -561,7 +561,7 @@ const input = new PointerInput(renderer.canvas, {
   place(x, y, o) {
     const s = sim();
     if (mode !== 'playing' || !s) return;
-    const cell = cellAt(layout, s.rules.cols, s.rules.rows, x, y);
+    const cell = wallOriginAt(layout, s.rules.cols, s.rules.rows, x, y, o);
     if (!cell) return;
     s.placeWall(cell.x, cell.y, o);
     if (hintActive) {
