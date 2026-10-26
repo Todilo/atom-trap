@@ -11,13 +11,15 @@
   </head>
   <body>
     <header id="hud" aria-live="off">
+      <span>Level <b id="hud-level">1</b></span>
       <span>Lives <b id="hud-lives">0</b></span>
       <span>Cleared <b id="hud-coverage">0%</b></span>
-      <span>Score <b id="hud-score">0</b></span>
+      <span>Score <b id="hud-score">0</b><i id="hud-unscored" hidden> unscored</i></span>
       <span>Time <b id="hud-time">0</b></span>
+      <button type="button" id="hud-pause" aria-label="Pause">❚❚</button>
     </header>
     <main id="app"></main>
-    <div id="message" hidden></div>
+    <section id="screen" hidden></section>
     <div id="rotate" role="alert">
       <p>Rotate your device to landscape</p>
     </div>

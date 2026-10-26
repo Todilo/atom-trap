@@ -55,13 +55,15 @@ export class PlainRenderer {
   }
 
   /** `alpha` (0..1) interpolates atoms from their previous to their current cell. */
-  draw(sim: Simulation, previous: Atom[], alpha: number): void {
+  draw(sim: Simulation | null, previous: Atom[], alpha: number): void {
     const l = this.layout;
     if (!l) return;
-    const { cols, rows } = sim.rules;
-
     const b = this.board.clear();
     b.rect(l.x, l.y, l.width, l.height).fill(COLORS.board);
+    const a = this.atoms.clear();
+    if (!sim) return;
+    const { cols, rows } = sim.rules;
+
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
         const c = sim.cellAt(x, y);
@@ -72,8 +74,7 @@ export class PlainRenderer {
       }
     }
 
-    const a = this.atoms.clear();
-    const r = Math.min(l.cellW, l.cellH) * 0.48;
+    const r =Math.min(l.cellW, l.cellH) * 0.48;
     sim.atoms.forEach((atom, i) => {
       const p = previous[i] ?? atom;
       const cx = l.x + (p.x + (atom.x - p.x) * alpha + 0.5) * l.cellW;

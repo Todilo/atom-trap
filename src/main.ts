@@ -2,11 +2,13 @@ import './style.css';
 import { registerSW } from 'virtual:pwa-register';
 import { PointerInput } from './game/input';
 import { cellAt, layoutBoard } from './game/layout';
+import { Progress, Run, type RunKind } from './game/run';
 import { PlainRenderer } from './render/plainRenderer';
-import { classicRuleset } from './sim/ruleset';
-import { Simulation, type Atom } from './sim/simulation';
+import { gameOverScreen, highScoresScreen, levelClearedScreen, pauseScreen, titleScreen } from './shell/screens';
+import { localStore } from './shell/storage';
+import type { Atom, Simulation } from './sim/simulation';
 
-// M2 (ADR-0010): one playable Classic level with placeholder graphics. The full game loop comes in M3.
+// M3 (ADR-0010): the complete Classic game loop, still with placeholder graphics.
 registerSW({ immediate: true });
 
 // Best effort only: browsers allow the orientation lock just in fullscreen / installed mode.
@@ -14,97 +16,166 @@ const orientation = screen.orientation as ScreenOrientation & { lock?: (o: strin
 orientation.lock?.('landscape').catch(() => {});
 
 const $ = (id: string) => document.getElementById(id)!;
-const hud = { lives: $('hud-lives'), coverage: $('hud-coverage'), score: $('hud-score'), time: $('hud-time') };
-const message = $('message');
-
+const hud = {
+  level: $('hud-level'),
+  lives: $('hud-lives'),
+  coverage: $('hud-coverage'),
+  score: $('hud-score'),
+  unscored: $('hud-unscored'),
+  time: $('hud-time'),
+  pause: $('hud-pause'),
+};
+const screenEl = $('screen');
 const host = $('app');
 const renderer = await PlainRenderer.create(host);
+const progress = new Progress(localStore);
 
-let sim = newSimulation();
-let previous: Atom[] = snapshot(sim);
+/**
+ * Shell states: `menu` (title / high scores, board idle behind), `playing`, `paused`,
+ * `cleared` (level-clear screen), `over` (game-over screen).
+ */
+type Mode = 'menu' | 'playing' | 'paused' | 'cleared' | 'over';
+let mode: Mode = 'menu';
+let run: Run | null = null;
+let previous: Atom[] = [];
 let accumulator = 0;
-let paused = false;
 
-function newSimulation(): Simulation {
-  return new Simulation(classicRuleset(1), { seed: (Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0 });
-}
+const sim = (): Simulation | null => run?.sim ?? null;
 
 function snapshot(s: Simulation): Atom[] {
   return s.atoms.map((a) => ({ ...a }));
 }
 
-function restart(): void {
-  sim = newSimulation();
-  previous = snapshot(sim);
+function showScreen(html: string | null): void {
+  screenEl.hidden = html === null;
+  screenEl.innerHTML = html ?? '';
+}
+
+function showMenu(): void {
+  mode = 'menu';
+  showScreen(titleScreen(progress.highestLevel));
+}
+
+function startRun(kind: RunKind): void {
+  run = new Run(kind, progress);
+  beginLevel();
+}
+
+function beginLevel(): void {
+  previous = snapshot(run!.sim);
   accumulator = 0;
   input.mouseOrientation = 'vertical';
-  showMessage(null);
+  mode = 'playing';
+  showScreen(null);
 }
 
-function showMessage(text: string | null): void {
-  message.hidden = text === null;
-  message.innerHTML = text === null ? '' : `<div>${text}</div>`;
+function pause(): void {
+  if (mode !== 'playing') return;
+  mode = 'paused';
+  showScreen(pauseScreen());
 }
 
-// Dev-only hook for inspecting the running simulation from the browser console.
-if (import.meta.env.DEV) Object.defineProperty(window, 'atomTrap', { get: () => ({ sim, layout }) });
+function resume(): void {
+  if (mode !== 'paused') return;
+  mode = 'playing';
+  showScreen(null);
+}
+
+screenEl.addEventListener('click', (e) => {
+  const action = (e.target as HTMLElement).closest<HTMLElement>('[data-action]')?.dataset.action;
+  if (!action) {
+    // A tap anywhere on the level-clear screen moves on.
+    if (mode === 'cleared') nextLevel();
+    return;
+  }
+  switch (action) {
+    case 'play':
+      return startRun('scored');
+    case 'continue':
+      return startRun('continue');
+    case 'scores':
+      return showScreen(highScoresScreen(progress.highScores));
+    case 'menu':
+      return showMenu();
+    case 'resume':
+      return resume();
+    case 'quit':
+      run = null;
+      return showMenu();
+  }
+});
+
+function nextLevel(): void {
+  run!.nextLevel();
+  beginLevel();
+}
+
+hud.pause.addEventListener('click', () => (mode === 'paused' ? resume() : pause()));
 
 let layout = layoutBoard(28, 20, 0, 0, 1, 1);
 function relayout(): void {
   const { width, height } = host.getBoundingClientRect();
   const pad = 8;
-  layout = layoutBoard(sim.rules.cols, sim.rules.rows, pad, pad, width - 2 * pad, height - 2 * pad);
-  renderer.setLayout(layout, sim.rules.cols, sim.rules.rows);
+  layout = layoutBoard(28, 20, pad, pad, width - 2 * pad, height - 2 * pad);
+  renderer.setLayout(layout, 28, 20);
 }
 new ResizeObserver(relayout).observe(host);
 relayout();
 
 const input = new PointerInput(renderer.canvas, {
   place(x, y, o) {
-    if (paused || sim.status !== 'playing') return;
-    const cell = cellAt(layout, sim.rules.cols, sim.rules.rows, x, y);
-    if (cell) sim.placeWall(cell.x, cell.y, o);
+    const s = sim();
+    if (mode !== 'playing' || !s) return;
+    const cell = cellAt(layout, s.rules.cols, s.rules.rows, x, y);
+    if (cell) s.placeWall(cell.x, cell.y, o);
   },
-  tap() {
-    if (paused) {
-      paused = false;
-      showMessage(null);
-      return true;
-    }
-    if (sim.status !== 'playing') {
-      restart();
-      return true;
-    }
-    return false;
-  },
+  tap: () => mode !== 'playing',
 });
 
-// Auto-pause when the app goes to the background; resume on the player's tap (ADR-0008).
+// Auto-pause when the app goes to the background; the player resumes it (ADR-0008).
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden && sim.status === 'playing') {
-    paused = true;
-    showMessage('Paused<br><small>Tap to resume</small>');
-  }
+  if (document.hidden) pause();
 });
+
+function handleStepEvents(s: Simulation): void {
+  for (const e of s.step()) {
+    if (e.type === 'level-cleared') {
+      mode = 'cleared';
+      showScreen(levelClearedScreen(run!.level, e.bonus, run!.score, run!.kind === 'scored'));
+    } else if (e.type === 'game-over') {
+      mode = 'over';
+      const rank = run!.finish();
+      showScreen(gameOverScreen(e.reason, run!.score, run!.level, run!.kind === 'scored', rank));
+    }
+  }
+}
 
 renderer.app.ticker.add((ticker) => {
-  if (!paused && sim.status === 'playing') {
+  const s = sim();
+  if (s && mode === 'playing') {
     accumulator += Math.min(ticker.deltaMS, 250);
-    while (accumulator >= sim.rules.stepMs && sim.status === 'playing') {
-      previous = snapshot(sim);
-      for (const e of sim.step()) {
-        if (e.type === 'level-cleared') {
-          showMessage(`Level cleared!<br>Bonus ${Math.round(e.bonus.total)} · Score ${Math.round(sim.score)}<br><small>Tap to play again</small>`);
-        } else if (e.type === 'game-over') {
-          showMessage(`${e.reason === 'time' ? 'Out of time' : 'Game over'}<br>Score ${Math.round(sim.score)}<br><small>Tap to play again</small>`);
-        }
-      }
-      accumulator -= sim.rules.stepMs;
+    while (accumulator >= s.rules.stepMs && mode === 'playing') {
+      previous = snapshot(s);
+      handleStepEvents(s);
+      accumulator -= s.rules.stepMs;
     }
   }
-  renderer.draw(sim, previous, sim.status === 'playing' && !paused ? accumulator / sim.rules.stepMs : 1);
-  hud.lives.textContent = String(sim.lives);
-  hud.coverage.textContent = `${Math.floor(sim.coverage * 100)}%`;
-  hud.score.textContent = String(Math.round(sim.score));
-  hud.time.textContent = String(sim.timeLeft);
+  renderer.draw(s, previous, s && mode === 'playing' ? accumulator / s.rules.stepMs : 1);
+  updateHud();
 });
+
+function updateHud(): void {
+  const s = sim();
+  hud.level.textContent = String(run?.level ?? progress.highestLevel);
+  hud.lives.textContent = String(s?.lives ?? 0);
+  hud.coverage.textContent = `${Math.floor((s?.coverage ?? 0) * 100)}%`;
+  hud.score.textContent = Math.round(run?.score ?? 0).toLocaleString('en-US');
+  hud.unscored.hidden = run?.kind !== 'continue';
+  hud.time.textContent = String(s?.timeLeft ?? 0);
+  hud.pause.hidden = mode !== 'playing' && mode !== 'paused';
+}
+
+// Dev-only hook for inspecting the running game from the browser console.
+if (import.meta.env.DEV) Object.defineProperty(window, 'atomTrap', { get: () => ({ run, mode, layout, progress }) });
+
+showMenu();
