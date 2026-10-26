@@ -3,12 +3,12 @@ import { registerSW } from 'virtual:pwa-register';
 import { PointerInput } from './game/input';
 import { cellAt, layoutBoard } from './game/layout';
 import { Progress, Run, type RunKind } from './game/run';
-import { PlainRenderer } from './render/plainRenderer';
+import { NeonRenderer } from './render/neonRenderer';
 import { gameOverScreen, highScoresScreen, levelClearedScreen, pauseScreen, titleScreen } from './shell/screens';
 import { localStore } from './shell/storage';
 import type { Atom, Simulation } from './sim/simulation';
 
-// M3 (ADR-0010): the complete Classic game loop, still with placeholder graphics.
+// The complete Classic game (ADR-0010) with the neon look (ADR-0004).
 registerSW({ immediate: true });
 
 // Best effort only: browsers allow the orientation lock just in fullscreen / installed mode.
@@ -27,7 +27,7 @@ const hud = {
 };
 const screenEl = $('screen');
 const host = $('app');
-const renderer = await PlainRenderer.create(host);
+const renderer = await NeonRenderer.create(host);
 const progress = new Progress(localStore);
 
 /**
@@ -176,6 +176,6 @@ function updateHud(): void {
 }
 
 // Dev-only hook for inspecting the running game from the browser console.
-if (import.meta.env.DEV) Object.defineProperty(window, 'atomTrap', { get: () => ({ run, mode, layout, progress }) });
+if (import.meta.env.DEV) Object.defineProperty(window, 'atomTrap', { get: () => ({ run, mode, layout, progress, renderer }) });
 
 showMenu();
