@@ -7,7 +7,7 @@ export interface Ruleset {
   rows: number;
   atoms: number;
   lives: number;
-  /** Starting level time, in timer units. */
+  /** Starting level time, in timer units; 0 means the level is untimed. */
   timeLimit: number;
   /** Timer units consumed per step (10 units per second in Classic). */
   timeUnitsPerStep: number;
@@ -25,6 +25,8 @@ export interface Ruleset {
   timeBonusPerUnit: number;
   /** Multiplier on every point award (0.5 for the original's Slow speed). */
   scoreScale: number;
+  /** Walls the player may place; 0 means no limit (Classic). Running out before clearing ends the level. */
+  wallLimit: number;
 }
 
 export type ClassicSpeed = 'fast' | 'slow';
@@ -60,6 +62,7 @@ export function classicRuleset(level: number, speed: ClassicSpeed = 'fast'): Rul
     livesBonusPerLife: 250 * k,
     timeBonusPerUnit: 1,
     scoreScale: slow ? 0.5 : 1,
+    wallLimit: 0,
   };
 }
 

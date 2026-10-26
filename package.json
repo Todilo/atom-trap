@@ -9,7 +9,8 @@
     "build": "tsc --noEmit && vitest run && vite build",
     "test": "vitest run",
     "preview": "vite preview",
-    "icons": "node scripts/make-icons.mjs"
+    "icons": "node scripts/make-icons.mjs",
+    "tune-puzzles": "rolldown scripts/tune-puzzles.ts --file node_modules/.cache/tune-puzzles.mjs --platform node --format esm && node node_modules/.cache/tune-puzzles.mjs"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

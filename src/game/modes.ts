@@ -1,9 +1,9 @@
 /**
- * The game modes shown on the title screen. Classic is the only playable one today; the others are
+ * The game modes shown on the title screen. Classic and Puzzle are playable; the others are
  * placeholders so the menu, high scores and HUD are built for more than one mode (ADR-0002).
  * Adding a mode: give it an entry here, then a ruleset and a run kind for it.
  */
-export type GameModeId = 'classic' | 'daily' | 'zen' | 'arcade';
+export type GameModeId = 'classic' | 'puzzle' | 'daily' | 'arcade';
 
 export interface GameMode {
   id: GameModeId;
@@ -29,6 +29,14 @@ export const GAME_MODES: GameMode[] = [
     available: true,
   },
   {
+    id: 'puzzle',
+    name: 'Puzzle',
+    blurb: 'Hand-made boards. Clear each one in as few walls as you can.',
+    rules: ['Beat par', 'No timer', '3 lives', 'Stars for fewer walls'],
+    footnote: '',
+    available: true,
+  },
+  {
     id: 'daily',
     name: 'Daily',
     blurb: 'One seeded board for everyone, once a day. Share your result.',
@@ -36,15 +44,6 @@ export const GAME_MODES: GameMode[] = [
     footnote: 'A new board every day',
     available: false,
     scoresNote: 'Each day gets its own board and its own table, with your streak beside it.',
-  },
-  {
-    id: 'zen',
-    name: 'Zen',
-    blurb: 'No timer, no lives. Just you, the atoms and the music.',
-    rules: ['No timer', 'No lives', 'Endless boards'],
-    footnote: 'Untimed · unscored',
-    available: false,
-    scoresNote: 'Zen keeps no score. This tab will show boards cleared and time played.',
   },
   {
     id: 'arcade',

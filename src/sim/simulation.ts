@@ -38,7 +38,7 @@ export type GameEvent =
   | { type: 'cells-removed'; count: number; points: number }
   | { type: 'time-warning' }
   | { type: 'level-cleared'; bonus: LevelBonus }
-  | { type: 'game-over'; reason: 'lives' | 'time' };
+  | { type: 'game-over'; reason: 'lives' | 'time' | 'walls' };
 
 export interface SimulationOptions {
   seed?: number;
@@ -65,6 +65,8 @@ export class Simulation {
   readonly startFilled: number = 0;
   status: LevelStatus = 'playing';
   steps = 0;
+  /** Walls placed so far; a placement counts once at least one of its halves starts. */
+  wallsPlaced = 0;
 
   private readonly grid: Uint8Array;
   /** Index of the atom in each cell, or -1. Atoms never share a cell. */
@@ -95,6 +97,21 @@ export class Simulation {
     if (filled) this.startFilled = filled + this.fillEmptyRegions();
   }
 
+  /** An independent copy, so a copy can be played forward to look ahead (the puzzle-tuning bot). */
+  clone(): Simulation {
+    const copy: Simulation = Object.assign(Object.create(Simulation.prototype), this);
+    const half = (h: WallHalf | null) => h && { ...h, cells: h.cells.map((c) => ({ ...c })) };
+    // Object.assign shared the mutable parts; give the copy its own.
+    Object.assign(copy, {
+      atoms: this.atoms.map((a) => ({ ...a })),
+      halves: { a: half(this.halves.a), b: half(this.halves.b) },
+      grid: this.grid.slice(),
+      occupant: this.occupant.slice(),
+      queued: this.queued && { ...this.queued },
+    });
+    return copy;
+  }
+
   /** The share of the clearable board (everything not filled at the start) that has been removed. */
   get coverage(): number {
     return this.removedCells / (this.rules.cols * this.rules.rows - this.startFilled);
@@ -106,7 +123,12 @@ export class Simulation {
 
   /** Queue a wall; it is applied at the start of the next step (the original also queues clicks). */
   placeWall(x: number, y: number, orientation: Orientation): void {
-    if (this.status === 'playing') this.queued = { x, y, orientation };
+    if (this.status === 'playing' && this.wallsLeft !== 0) this.queued = { x, y, orientation };
+  }
+
+  /** Walls the player may still place, or null when there is no limit. */
+  get wallsLeft(): number | null {
+    return this.rules.wallLimit ? Math.max(0, this.rules.wallLimit - this.wallsPlaced) : null;
   }
 
   step(): GameEvent[] {
@@ -128,6 +150,11 @@ export class Simulation {
       this.status = 'cleared';
       events.push({ type: 'level-cleared', bonus });
     }
+    // Out of walls, with nothing left growing that could still clear the board.
+    if (this.status === 'playing' && this.wallsLeft === 0 && !this.queued && !this.halves.a && !this.halves.b) {
+      this.status = 'over';
+      events.push({ type: 'game-over', reason: 'walls' });
+    }
     return events;
   }
 
@@ -135,6 +162,7 @@ export class Simulation {
     const q = this.queued;
     if (!q) return;
     this.queued = null;
+    const started = events.length;
     if (q.orientation === 'horizontal') {
       this.startHalf('a', q.x, q.y, -1, 0, events);
       this.startHalf('b', q.x + 1, q.y, 1, 0, events);
@@ -142,6 +170,7 @@ export class Simulation {
       this.startHalf('a', q.x, q.y, 0, -1, events);
       this.startHalf('b', q.x, q.y + 1, 0, 1, events);
     }
+    if (events.length > started) this.wallsPlaced++;
   }
 
   /** Each half has one slot and starts only if that slot is free and its start cell is open. */
@@ -289,6 +318,7 @@ export class Simulation {
   }
 
   private tickTimer(events: GameEvent[]): void {
+    if (!this.rules.timeLimit) return;
     const before = this.timeLeft;
     this.timeLeft = Math.max(0, this.timeLeft - this.rules.timeUnitsPerStep);
     if (before > this.rules.timeWarningAt && this.timeLeft <= this.rules.timeWarningAt) events.push({ type: 'time-warning' });

@@ -145,6 +145,48 @@ describe('Walls and filling', () => {
     expect(sim.halves.b).toBeNull();
   });
 
+  it('counts a wall only when one of its halves starts', () => {
+    const sim = new Simulation(level1, { atoms: [{ x: 27, y: 19, dx: 1, dy: 1 }] });
+    sim.placeWall(5, 10, 'vertical');
+    sim.step();
+    // Both slots are busy, so this click starts nothing and costs nothing.
+    sim.placeWall(15, 5, 'horizontal');
+    sim.step();
+    expect(sim.wallsPlaced).toBe(1);
+  });
+
+  it('ends the level when the wall budget is spent without clearing', () => {
+    const sim = new Simulation(rules({ wallLimit: 1 }), { atoms: [{ x: 27, y: 10, dx: 1, dy: 1 }] });
+    expect(sim.wallsLeft).toBe(1);
+    sim.placeWall(10, 10, 'vertical');
+    const events = run(sim, 12);
+    // The wall clears 220 of 560 cells: short of 75%, and no walls left.
+    expect(sim.wallsLeft).toBe(0);
+    expect(events).toContainEqual({ type: 'game-over', reason: 'walls' });
+    expect(sim.status).toBe('over');
+  });
+
+  it('has no wall budget in Classic', () => {
+    expect(new Simulation(level1, { seed: 1 }).wallsLeft).toBeNull();
+  });
+
+  it('clones into an independent copy that plays on identically', () => {
+    const sim = new Simulation(level1, { seed: 3 });
+    sim.placeWall(10, 10, 'vertical');
+    run(sim, 3);
+    const copy = sim.clone();
+    copy.placeWall(20, 5, 'horizontal');
+    run(copy, 20);
+    expect(sim.steps).toBe(3);
+    expect(sim.wallsPlaced).toBe(1);
+    // Played the same way, the copy and the original stay in step.
+    const twin = sim.clone();
+    run(sim, 20);
+    run(twin, 20);
+    expect(twin.atoms).toEqual(sim.atoms);
+    expect(twin.removedCells).toBe(sim.removedCells);
+  });
+
   it('does not fill a region that still holds an atom', () => {
     const sim = new Simulation(rules({ cols: 8, rows: 1 }), { atoms: [{ x: 0, y: 0, dx: 1, dy: 1 }] });
     sim.placeWall(4, 0, 'vertical');
@@ -190,6 +232,12 @@ describe('Level end', () => {
     expect(events).toContainEqual({ type: 'game-over', reason: 'time' });
     expect(sim.lives).toBe(2);
     expect(sim.steps).toBe(3);
+  });
+
+  it('never runs out of time on an untimed level', () => {
+    const sim = new Simulation(rules({ cols: 8, rows: 1, timeLimit: 0 }), { atoms: [{ x: 0, y: 0, dx: 1, dy: 1 }] });
+    expect(types(run(sim, 5000))).not.toContain('game-over');
+    expect(sim.status).toBe('playing');
   });
 
   it('warns once when the timer drops to 200 units', () => {

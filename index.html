@@ -25,9 +25,10 @@
           <div class="bar"><div class="fill" id="hud-coverage-bar"></div><div class="mark" id="hud-target-mark"></div></div>
         </div>
         <div class="chip col end">
-          <span class="lbl">Score<i id="hud-unscored" hidden> · unscored</i></span><b class="score" id="hud-score">0</b>
+          <span class="lbl"><span id="hud-score-label">Score</span><i id="hud-unscored" hidden> · unscored</i></span>
+          <span class="value-row"><span id="hud-stars"></span><b class="score" id="hud-score">0</b></span>
         </div>
-        <div class="chip col time">
+        <div class="chip col time" id="hud-time-chip">
           <div class="line"><span class="lbl">Time</span><b id="hud-time">0</b></div>
           <div class="bar thin"><div class="fill" id="hud-time-bar"></div></div>
         </div>

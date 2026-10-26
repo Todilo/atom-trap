@@ -1,4 +1,6 @@
 import { GAME_MODES, modeById, type GameModeId } from '../game/modes';
+import { PUZZLES } from '../game/puzzles';
+import { layoutById } from '../sim/layouts';
 import { MAX_NAME_LENGTH, type HighScore } from '../game/run';
 import { ATOM_STYLES, THEMES, type AtomStyle } from '../render/themes';
 import type { ClassicSpeed, LevelBonus } from '../sim/ruleset';
@@ -26,6 +28,7 @@ const icon = {
   right: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>',
   play: '<svg viewBox="0 0 24 24" aria-hidden="true" class="filled"><path d="M6 4l14 8-14 8z"/></svg>',
   next: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+  restart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>',
   music: (on: boolean) =>
     `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>${on ? '' : '<path d="M3 3l18 18"/>'}</svg>`,
   sound: (on: boolean) =>
@@ -39,7 +42,7 @@ const logo = `<svg class="logo" viewBox="0 0 44 44" aria-hidden="true"><rect cla
 const MODE_ART: Record<GameModeId, string> = {
   classic: `<svg viewBox="0 0 180 104" aria-hidden="true"><rect class="board edge" x="2" y="2" width="176" height="100" rx="3"/><rect class="removed" x="112" y="2" width="66" height="100"/><line class="hot" x1="112" y1="2" x2="112" y2="102"/><line class="edge" x1="2" y1="58" x2="112" y2="58"/><circle class="atom" cx="44" cy="30" r="7"/><circle class="atom" cx="80" cy="82" r="7"/></svg>`,
   daily: `<svg viewBox="0 0 180 104" aria-hidden="true"><rect class="board edge" x="40" y="10" width="100" height="86" rx="8"/><line class="edge" x1="40" y1="32" x2="140" y2="32"/><line class="hot round" x1="62" y1="4" x2="62" y2="18"/><line class="hot round" x1="118" y1="4" x2="118" y2="18"/><circle class="atom" cx="72" cy="62" r="7"/><circle class="atom" cx="108" cy="74" r="7"/></svg>`,
-  zen: `<svg viewBox="0 0 180 104" aria-hidden="true"><path class="edge" d="M30 52c0-16 16-28 30-14l60 28c14 14 30 2 30-14s-16-28-30-14L60 66C46 80 30 68 30 52z"/><circle class="atom" cx="60" cy="38" r="7"/><circle class="atom" cx="120" cy="66" r="7"/></svg>`,
+  puzzle: `<svg viewBox="0 0 180 104" aria-hidden="true"><rect class="board edge" x="2" y="2" width="176" height="100" rx="3"/><rect class="removed" x="40" y="26" width="22" height="22"/><rect class="removed" x="118" y="56" width="22" height="22"/><circle class="atom" cx="96" cy="36" r="7"/><path class="bolt" d="M30 80l4 8 9 1-7 6 2 9-8-5-8 5 2-9-7-6 9-1z"/><path class="bolt" d="M60 80l4 8 9 1-7 6 2 9-8-5-8 5 2-9-7-6 9-1z"/></svg>`,
   arcade: `<svg viewBox="0 0 180 104" aria-hidden="true"><polygon class="board edge" points="90,14 122,32 122,70 90,88 58,70 58,32"/><path class="bolt" d="M94 30l-14 24h12l-6 20 16-26H90z"/><circle class="atom" cx="30" cy="30" r="6"/><circle class="atom" cx="152" cy="76" r="6"/></svg>`,
 };
 
@@ -56,11 +59,45 @@ export interface Prefs {
   mode: GameModeId;
 }
 
-export function titleScreen(highestLevel: number, prefs: Prefs, bestScore: number | null): string {
+/** Puzzle progress, for the title screen, the puzzle list and the Puzzle scores tab. */
+export interface PuzzleSummary {
+  /** Best stars per puzzle, in PUZZLES order. */
+  stars: number[];
+  /** Fewest walls each puzzle was cleared in, or null. */
+  bestWalls: (number | null)[];
+  unlocked: boolean[];
+  total: number;
+  max: number;
+  /** The puzzle the title screen offers: the first open one without three stars. */
+  suggested: number;
+}
+
+/** Three stars, `n` of them lit. */
+function stars(n: number, cls = ''): string {
+  const one = (on: boolean) =>
+    `<svg viewBox="0 0 24 24" class="star${on ? ' on' : ''}" aria-hidden="true"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg>`;
+  return `<span class="stars ${cls}" role="img" aria-label="${n} of 3 stars">${[0, 1, 2].map((i) => one(i < n)).join('')}</span>`;
+}
+
+/** A small picture of a puzzle's board: its layout's filled cells. */
+function boardThumb(layoutId: string | undefined): string {
+  const rows = layoutId ? layoutById(layoutId).rows : [];
+  const cells = rows.flatMap((row, y) => [...row].map((c, x) => (c === '#' ? `<rect x="${x}" y="${y}" width="1.02" height="1.02"/>` : ''))).join('');
+  return `<svg class="thumb" viewBox="0 0 28 20" preserveAspectRatio="none" aria-hidden="true"><rect class="thumb-board" width="28" height="20"/><g class="thumb-cells">${cells}</g></svg>`;
+}
+
+export function titleScreen(highestLevel: number, prefs: Prefs, bestScore: number | null, puzzles: PuzzleSummary): string {
   const selected = modeById(prefs.mode);
   const cards = GAME_MODES.map((m) => {
     const on = m.id === selected.id;
-    const foot = m.id === 'classic' ? (bestScore ? `Best <b>${fmt(bestScore)}</b>` : 'No score yet') : m.footnote;
+    const foot =
+      m.id === 'classic'
+        ? bestScore
+          ? `Best <b>${fmt(bestScore)}</b>`
+          : 'No score yet'
+        : m.id === 'puzzle'
+          ? `Stars <b>${puzzles.total} / ${puzzles.max}</b>`
+          : m.footnote;
     return `
       <button type="button" class="mode-card${on ? ' selected' : ''}" data-action="mode:${m.id}" aria-pressed="${on}">
         <span class="mode-art">${MODE_ART[m.id]}</span>
@@ -72,7 +109,12 @@ export function titleScreen(highestLevel: number, prefs: Prefs, bestScore: numbe
       </button>`;
   }).join('');
 
-  const actions = selected.available
+  const next = puzzles.suggested;
+  const actions =
+    selected.id === 'puzzle'
+      ? `${button('puzzles', 'All puzzles', 'secondary')}
+      ${button(`puzzle:${next}`, `${icon.play}Puzzle ${next + 1}`, 'primary big')}`
+      : selected.available
     ? `<div class="segmented" role="group" aria-label="Speed">
         ${button('speed:fast', 'Fast', prefs.speed === 'fast' ? 'on' : '', `aria-pressed="${prefs.speed === 'fast'}"`)}
         ${button('speed:slow', 'Slow · ½ points', prefs.speed === 'slow' ? 'on' : '', `aria-pressed="${prefs.speed === 'slow'}"`)}
@@ -173,12 +215,12 @@ export function settingsScreen(prefs: Prefs, hapticsSupported: boolean, back: 'm
 
 /** What the pause dialog shows about the level in progress. */
 export interface PauseInfo {
-  mode: string;
-  level: number;
+  /** Where the player is, e.g. "Classic · Level 3". */
+  where: string;
   coverage: number;
-  score: number;
-  lives: number;
-  time: number;
+  stats: [label: string, value: string][];
+  /** Puzzles can be restarted; a scored Classic run can't, or a bad board could be retried. */
+  canRestart: boolean;
 }
 
 const stat = (label: string, value: string) => `<div class="stat"><span>${label}</span><b>${value}</b></div>`;
@@ -188,11 +230,12 @@ export function pauseScreen(info: PauseInfo, prefs: Prefs): string {
     <div class="dialog" role="dialog" aria-labelledby="dlg-title">
       <div class="dialog-head">
         <h2 id="dlg-title" class="glow">Paused</h2>
-        <p class="sub">${info.mode} · Level ${info.level} · ${info.coverage}% cleared</p>
+        <p class="sub">${info.where} · ${info.coverage}% cleared</p>
       </div>
-      <div class="stats">${stat('Score', fmt(info.score))}${stat('Lives', String(info.lives))}${stat('Time', String(info.time))}</div>
+      <div class="stats">${info.stats.map(([label, value]) => stat(label, value)).join('')}</div>
       <div class="stack">
         ${button('resume', `${icon.play}Resume`, 'primary big')}
+        ${info.canRestart ? button('retry', `${icon.restart}Restart`, 'secondary') : ''}
         ${button('settings', 'Settings', 'secondary')}
         ${button('quit', 'Quit to menu', 'ghost')}
       </div>
@@ -238,7 +281,7 @@ export function levelClearedScreen(c: ClearedInfo): string {
 
 /** `rank` set means a new high score; `savedName` set means its name has been saved. */
 export function gameOverScreen(
-  reason: 'lives' | 'time',
+  reason: 'lives' | 'time' | 'walls',
   score: number,
   level: number,
   scored: boolean,
@@ -272,13 +315,30 @@ export function gameOverScreen(
     </div>`;
 }
 
-export function highScoresScreen(scores: HighScore[], tab: GameModeId, highestLevel: number): string {
+export function highScoresScreen(scores: HighScore[], tab: GameModeId, highestLevel: number, puzzles: PuzzleSummary): string {
   const tabs = GAME_MODES.map(
     (m) => button(`scores:${m.id}`, m.name, m.id === tab ? 'on' : '', `role="tab" aria-selected="${m.id === tab}"`),
   ).join('');
   const mode = modeById(tab);
   let body: string;
-  if (mode.id !== 'classic') {
+  if (mode.id === 'puzzle') {
+    const rows = PUZZLES.map(
+      (p, i) =>
+        `<tr${puzzles.unlocked[i] ? '' : ' class="dim"'}><td class="rank">${i + 1}</td><td class="name">${p.name}</td><td class="dim">${puzzles.bestWalls[i] ?? '—'}</td><td class="dim">${p.par[0]}</td><td class="num">${puzzles.unlocked[i] ? stars(puzzles.stars[i], 'small') : 'Locked'}</td></tr>`,
+    ).join('');
+    body = `
+      <div class="score-layout" role="tabpanel">
+        <section class="panel table-panel"><table class="scores"><thead><tr><th>#</th><th>Puzzle</th><th>Best walls</th><th>Par</th><th class="num">Stars</th></tr></thead><tbody>${rows}</tbody></table></section>
+        <aside class="side">
+          <div class="panel best">
+            <span class="section-label">Stars</span>
+            <b>${puzzles.total} / ${puzzles.max}</b>
+            <span class="dim">${puzzles.stars.filter((s) => s > 0).length} of ${PUZZLES.length} puzzles solved</span>
+          </div>
+          <div class="panel">${button('puzzles', 'Open puzzles', 'secondary')}</div>
+        </aside>
+      </div>`;
+  } else if (mode.id !== 'classic') {
     body = `
       <section class="panel empty" role="tabpanel">
         ${MODE_ART[mode.id]}
@@ -319,5 +379,75 @@ export function highScoresScreen(scores: HighScore[], tab: GameModeId, highestLe
         <div class="segmented tabs" role="tablist" aria-label="Mode">${tabs}</div>
       </header>
       ${body}
+    </div>`;
+}
+
+export function puzzlesScreen(summary: PuzzleSummary): string {
+  const tiles = PUZZLES.map((p, i) => {
+    const open = summary.unlocked[i];
+    return `
+      <button type="button" class="puzzle-tile${open ? '' : ' locked'}" data-action="puzzle:${i}" ${open ? '' : 'disabled'} aria-label="Puzzle ${i + 1}, ${p.name}${open ? `, ${summary.stars[i]} of 3 stars` : ', locked'}">
+        ${boardThumb(p.layout)}
+        <span class="puzzle-head"><span class="puzzle-num">${i + 1}</span><span class="puzzle-name">${p.name}</span></span>
+        <span class="puzzle-foot">${open ? stars(summary.stars[i], 'small') : '<span class="dim">Locked</span>'}<span class="dim">${summary.bestWalls[i] !== null ? `Best ${summary.bestWalls[i]} · ` : ''}Par ${p.par[0]}</span></span>
+      </button>`;
+  }).join('');
+  return `
+    <div class="page puzzles-page">
+      <header class="topbar">
+        <div class="brand">${backButton('menu')}<h1 class="page-title">Puzzles</h1></div>
+        <div class="total-stars">${stars(3, 'small')}<b>${summary.total} / ${summary.max}</b></div>
+      </header>
+      <div class="puzzle-grid">${tiles}</div>
+    </div>`;
+}
+
+/** What the puzzle-solved dialog shows. */
+export interface PuzzleResult {
+  index: number;
+  stars: number;
+  /** True when this beat the puzzle's earlier best. */
+  improved: boolean;
+  wallsUsed: number;
+  /** Fewest walls this puzzle has been cleared in, this clear included. */
+  best: number;
+  hasNext: boolean;
+}
+
+export function puzzleClearedScreen(r: PuzzleResult): string {
+  const p = PUZZLES[r.index];
+  const tip =
+    r.stars === 3
+      ? 'Perfect.'
+      : `Use ${r.stars === 2 ? p.par[0] : p.par[1]} walls or fewer for ${r.stars === 2 ? 'three' : 'two'} stars.`;
+  return `
+    <div class="dialog gold" role="dialog" aria-labelledby="dlg-title">
+      <div class="dialog-head">
+        <p class="kicker">Puzzle ${r.index + 1} · ${p.name}</p>
+        <h2 id="dlg-title" class="glow gold">Solved</h2>
+      </div>
+      ${stars(r.stars, 'big')}
+      <p class="sub">${r.wallsUsed} walls · par ${p.par[0]} · ${r.improved ? 'new best' : `best ${r.best}`}. ${tip}</p>
+      <div class="row">
+        ${button('retry', `${icon.restart}Retry`, 'secondary grow')}
+        ${r.hasNext ? button(`puzzle:${r.index + 1}`, `Next${icon.next}`, 'primary big grow') : button('puzzles', 'All puzzles', 'primary big grow')}
+      </div>
+      ${r.hasNext ? button('puzzles', 'All puzzles', 'ghost') : ''}
+    </div>`;
+}
+
+export function puzzleFailedScreen(reason: 'lives' | 'time' | 'walls', index: number): string {
+  const p = PUZZLES[index];
+  return `
+    <div class="dialog" role="dialog" aria-labelledby="dlg-title">
+      <div class="dialog-head">
+        <p class="kicker">Puzzle ${index + 1} · ${p.name}</p>
+        <h2 id="dlg-title" class="glow">${reason === 'walls' ? 'Out of walls' : 'Out of lives'}</h2>
+        <p class="sub">${reason === 'walls' ? 'No walls left before 75% was cleared.' : 'Every life lost to a broken wall.'}</p>
+      </div>
+      <div class="row">
+        ${button('puzzles', 'All puzzles', 'secondary grow')}
+        ${button('retry', `${icon.restart}Retry`, 'primary big grow')}
+      </div>
     </div>`;
 }

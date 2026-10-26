@@ -8,6 +8,7 @@ import { cellAt, layoutBoard } from './game/layout';
 import { Progress, Run, type RunKind } from './game/run';
 import { NeonRenderer } from './render/neonRenderer';
 import { modeById, type GameModeId } from './game/modes';
+import { MAX_STARS, PUZZLES, PuzzleProgress, startPuzzle, starsFor } from './game/puzzles';
 import { AtomPreview } from './render/atomPreview';
 import { createLevel } from './sim/levels';
 import { LAYOUTS } from './sim/layouts';
@@ -19,16 +20,20 @@ import {
   highScoresScreen,
   levelClearedScreen,
   pauseScreen,
+  puzzleClearedScreen,
+  puzzleFailedScreen,
+  puzzlesScreen,
   ATOM_PAGE_SIZE,
   settingsScreen,
   titleScreen,
   type Prefs,
+  type PuzzleSummary,
 } from './shell/screens';
 import { localStore } from './shell/storage';
 import type { ClassicSpeed } from './sim/ruleset';
 import type { Atom, Simulation } from './sim/simulation';
 
-// The complete Classic game (ADR-0010) with the neon look (ADR-0004) and synth audio (ADR-0008).
+// Classic (ADR-0010) and Puzzle modes with the neon look (ADR-0004) and synth audio (ADR-0008).
 
 // Best effort only: browsers allow the orientation lock just in fullscreen / installed mode.
 const orientation = screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> };
@@ -45,6 +50,9 @@ const hud = {
   target: $('hud-target'),
   targetMark: $('hud-target-mark'),
   score: $('hud-score'),
+  scoreLabel: $('hud-score-label'),
+  stars: $('hud-stars'),
+  timeChip: $('hud-time-chip'),
   unscored: $('hud-unscored'),
   time: $('hud-time'),
   timeBar: $('hud-time-bar'),
@@ -53,6 +61,19 @@ const hud = {
 const screenEl = $('screen');
 const host = $('app');
 const progress = new Progress(localStore);
+const puzzleProgress = new PuzzleProgress(localStore);
+
+function puzzleSummary(): PuzzleSummary {
+  const stars = puzzleProgress.stars;
+  return {
+    stars,
+    bestWalls: puzzleProgress.bestWalls,
+    unlocked: PUZZLES.map((_, i) => puzzleProgress.unlocked(i)),
+    total: puzzleProgress.totalStars,
+    max: MAX_STARS,
+    suggested: puzzleProgress.suggested,
+  };
+}
 let theme = themeById(localStore.get('theme', 'neon'));
 let atomStyle: AtomStyle = atomStyleById(localStore.get('atomStyle', 'soft'));
 const renderer = await NeonRenderer.create(host, theme);
@@ -87,13 +108,16 @@ window.addEventListener('pointerdown', () => audio.unlock(), { capture: true });
  */
 type Mode = 'menu' | 'playing' | 'paused' | 'cleared' | 'over';
 let mode: Mode = 'menu';
+/** The Classic run in progress, if any; at most one of `run` and `puzzle` is set. */
 let run: Run | null = null;
+/** The puzzle in progress, if any. */
+let puzzle: { index: number; sim: Simulation } | null = null;
 let previous: Atom[] = [];
 let accumulator = 0;
 /** While the first-play hint shows, the level waits for the player's first wall. */
 let hintActive = false;
 /** The game-over screen's state, so it can be redrawn after the name is saved. */
-let gameOver: { reason: 'lives' | 'time'; rank: number | null; savedName: string | null } | null = null;
+let gameOver: { reason: 'lives' | 'time' | 'walls'; rank: number | null; savedName: string | null } | null = null;
 
 const hintEl = $('hint');
 const coarsePointer = window.matchMedia('(pointer: coarse)').matches;
@@ -107,7 +131,7 @@ function setHint(show: boolean): void {
   hintEl.hidden = !show;
 }
 
-const sim = (): Simulation | null => run?.sim ?? null;
+const sim = (): Simulation | null => run?.sim ?? puzzle?.sim ?? null;
 
 function snapshot(s: Simulation): Atom[] {
   return s.atoms.map((a) => ({ ...a }));
@@ -130,13 +154,22 @@ function showScreen(html: string | null, kind: 'page' | 'dialog' = 'dialog', dra
 function showMenu(): void {
   mode = 'menu';
   setHint(false);
-  const draw = () => showScreen(titleScreen(progress.highestLevel, prefs(), progress.highScores[0]?.score ?? null), 'page', draw);
+  const draw = () =>
+    showScreen(titleScreen(progress.highestLevel, prefs(), progress.highScores[0]?.score ?? null, puzzleSummary()), 'page', draw);
   draw();
 }
 
 function showScores(tab: GameModeId): void {
-  const draw = () => showScreen(highScoresScreen(progress.highScores, tab, progress.highestLevel), 'page', draw);
+  const draw = () => showScreen(highScoresScreen(progress.highScores, tab, progress.highestLevel, puzzleSummary()), 'page', draw);
   draw();
+}
+
+function showPuzzles(): void {
+  mode = 'menu';
+  run = null;
+  puzzle = null;
+  setHint(false);
+  showScreen(puzzlesScreen(puzzleSummary()), 'page');
 }
 
 /** Which page of atom styles Settings shows; it opens on the page holding the current style. */
@@ -170,33 +203,45 @@ async function showAtomPreviews(): Promise<void> {
 }
 
 function showPause(): void {
-  const s = run!.sim;
-  const draw = () =>
-    showScreen(
-      pauseScreen(
-        {
-          mode: modeById(prefsStore.mode).name,
-          level: run!.level,
-          coverage: Math.floor(s.coverage * 100),
-          score: run!.score,
-          lives: s.lives,
-          time: s.timeLeft,
-        },
-        prefs(),
-      ),
-      'dialog',
-      draw,
-    );
+  const s = sim()!;
+  const info = puzzle
+    ? {
+        where: `Puzzle ${puzzle.index + 1} · ${PUZZLES[puzzle.index].name}`,
+        stats: [
+          ['Walls', String(s.wallsPlaced)],
+          ['Par', String(PUZZLES[puzzle.index].par[0])],
+          ['Lives', String(s.lives)],
+        ] as [string, string][],
+        canRestart: true,
+      }
+    : {
+        where: `Classic · Level ${run!.level}`,
+        stats: [
+          ['Score', Math.round(run!.score).toLocaleString('en-US')],
+          ['Lives', String(s.lives)],
+          ['Time', String(s.timeLeft)],
+        ] as [string, string][],
+        canRestart: false,
+      };
+  const draw = () => showScreen(pauseScreen({ ...info, coverage: Math.floor(s.coverage * 100) }, prefs()), 'dialog', draw);
   draw();
 }
 
 function startRun(kind: RunKind): void {
+  puzzle = null;
   run = new Run(kind, progress, prefsStore.speed);
   beginLevel();
 }
 
+function playPuzzle(index: number): void {
+  if (!puzzleProgress.unlocked(index) || !PUZZLES[index]) return;
+  run = null;
+  puzzle = { index, sim: startPuzzle(PUZZLES[index]) };
+  beginLevel();
+}
+
 function beginLevel(): void {
-  previous = snapshot(run!.sim);
+  previous = snapshot(sim()!);
   accumulator = 0;
   input.mouseOrientation = 'vertical';
   mode = 'playing';
@@ -219,8 +264,8 @@ function resume(): void {
 screenEl.addEventListener('click', (e) => {
   const action = (e.target as HTMLElement).closest<HTMLElement>('[data-action]')?.dataset.action;
   if (!action) {
-    // A tap anywhere on the level-clear screen moves on.
-    if (mode === 'cleared') nextLevel();
+    // A tap anywhere on Classic's level-clear screen moves on.
+    if (mode === 'cleared' && run) nextLevel();
     return;
   }
   const [name, arg] = action.split(':');
@@ -231,6 +276,13 @@ screenEl.addEventListener('click', (e) => {
       return startRun('continue');
     case 'next':
       return nextLevel();
+    case 'puzzles':
+      return showPuzzles();
+    case 'puzzle':
+      return playPuzzle(Number(arg));
+    case 'retry':
+      if (puzzle) playPuzzle(puzzle.index);
+      return;
     case 'mode':
       prefsStore.mode = modeById(arg).id;
       savePrefs();
@@ -288,6 +340,7 @@ screenEl.addEventListener('click', (e) => {
       return saveName();
     case 'quit':
       run = null;
+      puzzle = null;
       setHint(false);
       return showMenu();
   }
@@ -361,11 +414,39 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
+/** One puzzle attempt, logged in dev builds to tune pars from real play (`atomTrap.puzzleLog()`). */
+interface PuzzleAttempt {
+  puzzle: number;
+  cleared: boolean;
+  walls: number;
+  livesLost: number;
+}
+
+function logPuzzleAttempt(s: Simulation, cleared: boolean): void {
+  if (!import.meta.env.DEV || !puzzle) return;
+  const log = localStore.get<PuzzleAttempt[]>('puzzleLog', []);
+  log.push({ puzzle: puzzle.index, cleared, walls: s.wallsPlaced, livesLost: s.rules.lives - s.lives });
+  localStore.set('puzzleLog', log.slice(-1000));
+}
+
 function handleStepEvents(s: Simulation): void {
   for (const e of s.step()) {
     audio.event(e);
     haptics.event(e);
-    if (e.type === 'level-cleared') {
+    if (puzzle && e.type === 'level-cleared') {
+      mode = 'cleared';
+      logPuzzleAttempt(s, true);
+      const stars = starsFor(PUZZLES[puzzle.index], s.wallsPlaced);
+      const improved = puzzleProgress.record(puzzle.index, s.wallsPlaced);
+      const best = puzzleProgress.bestWalls[puzzle.index] ?? s.wallsPlaced;
+      showScreen(
+        puzzleClearedScreen({ index: puzzle.index, stars, improved, wallsUsed: s.wallsPlaced, best, hasNext: puzzle.index + 1 < PUZZLES.length }),
+      );
+    } else if (puzzle && e.type === 'game-over') {
+      logPuzzleAttempt(s, false);
+      mode = 'over';
+      showScreen(puzzleFailedScreen(e.reason, puzzle.index));
+    } else if (e.type === 'level-cleared') {
       mode = 'cleared';
       showScreen(
         levelClearedScreen({
@@ -406,11 +487,12 @@ renderer.app.ticker.add((ticker) => {
 /** Lives show as dots up to this many; above it, as a number. */
 const MAX_LIFE_DOTS = 8;
 let shownLives = '';
+let shownStars = -1;
 
 function updateHud(): void {
   const s = sim();
-  hud.mode.textContent = modeById(prefsStore.mode).name;
-  hud.level.textContent = String(run?.level ?? progress.highestLevel);
+  hud.mode.textContent = puzzle ? 'Puzzle' : 'Classic';
+  hud.level.textContent = String(puzzle ? puzzle.index + 1 : (run?.level ?? progress.highestLevel));
   const lives = s?.lives ?? 0;
   const maxLives = s?.rules.lives ?? 0;
   const livesKey = `${lives}/${maxLives}`;
@@ -427,8 +509,17 @@ function updateHud(): void {
   hud.coverageBar.style.width = `${coverage}%`;
   hud.target.textContent = `/ ${target}%`;
   hud.targetMark.style.left = `${target}%`;
-  hud.score.textContent = Math.round(run?.score ?? 0).toLocaleString('en-US');
+  // Puzzles show walls used against par, and the stars still within reach, instead of a score.
+  hud.scoreLabel.textContent = puzzle ? `Walls · par ${PUZZLES[puzzle.index].par[0]}` : 'Score';
+  hud.score.textContent = puzzle ? String(s?.wallsPlaced ?? 0) : Math.round(run?.score ?? 0).toLocaleString('en-US');
+  const reachable = puzzle && s ? starsFor(PUZZLES[puzzle.index], s.wallsPlaced) : -1;
+  if (reachable !== shownStars) {
+    shownStars = reachable;
+    hud.stars.innerHTML = reachable < 0 ? '' : [0, 1, 2].map((i) => `<i${i < reachable ? ' class="on"' : ''}>★</i>`).join('');
+    hud.stars.setAttribute('aria-label', reachable < 0 ? '' : `${reachable} stars within reach`);
+  }
   hud.unscored.hidden = run?.kind !== 'continue';
+  hud.timeChip.hidden = !!s && !s.rules.timeLimit;
   const time = s?.timeLeft ?? 0;
   hud.time.textContent = String(time);
   hud.timeBar.style.width = `${s ? (100 * time) / s.rules.timeLimit : 0}%`;
@@ -468,6 +559,24 @@ if (import.meta.env.DEV) Object.defineProperty(window, 'atomTrap', {
       applyTheme,
       fakeUpdate: () => (updateReady = true),
       layouts: LAYOUTS.map((l) => l.id),
+      // A table per puzzle of your logged attempts, next to its pars.
+      puzzleLog: () => {
+        const log = localStore.get<PuzzleAttempt[]>('puzzleLog', []);
+        console.table(
+          PUZZLES.map((p, i) => {
+            const mine = log.filter((a) => a.puzzle === i);
+            const walls = mine.filter((a) => a.cleared).map((a) => a.walls).sort((a, b) => a - b);
+            return {
+              puzzle: `${i + 1} ${p.name}`,
+              attempts: mine.length,
+              cleared: walls.length,
+              best: walls[0] ?? null,
+              median: walls.length ? walls[Math.floor((walls.length - 1) / 2)] : null,
+              par: p.par.join(' / '),
+            };
+          }),
+        );
+      },
       tryLayout: (id: string) => {
         if (!run) startRun('continue');
         run!.sim = createLevel({ level: run!.level, speed: prefsStore.speed, layout: id, seed: (Math.random() * 0xffffffff) >>> 0 });
