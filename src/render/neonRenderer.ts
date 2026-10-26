@@ -2,7 +2,7 @@ import { Application, Container, Graphics, Sprite } from 'pixi.js';
 import type { BoardLayout } from '../game/layout';
 import { AtomPainter, glowTexture } from './atomPainter';
 import type { AtomStyle, Theme } from './themes';
-import { CELL_GROWING_A, CELL_GROWING_B, CELL_OPEN, CELL_REMOVED, type Atom, type Simulation } from '../sim/simulation';
+import { CELL_GROWING_A, CELL_GROWING_B, CELL_OPEN, CELL_REMOVED, type Atom, type Simulation, type Slot } from '../sim/simulation';
 
 /**
  * The neon look (ADR-0004). Glow is faked cheaply for mobile GPUs: additive blending, layered strokes
@@ -20,6 +20,21 @@ interface Particle {
   vy: number;
   life: number;
   maxLife: number;
+}
+
+/** The simulation as it was before its latest step, so frames in between can be drawn smoothly. */
+export interface Snapshot {
+  atoms: Atom[];
+  /** Each growing wall half's start cell and length in cells, or null. */
+  halves: Record<Slot, { x: number; y: number; length: number } | null>;
+}
+
+export function snapshot(sim: Simulation): Snapshot {
+  const half = (slot: Slot) => {
+    const h = sim.halves[slot];
+    return h && { x: h.cells[0].x, y: h.cells[0].y, length: h.cells.length };
+  };
+  return { atoms: sim.atoms.map((a) => ({ ...a })), halves: { a: half('a'), b: half('b') } };
 }
 
 export class NeonRenderer {
@@ -113,8 +128,8 @@ export class NeonRenderer {
     this.flash.alpha = 0;
   }
 
-  /** `alpha` (0..1) interpolates atoms from their previous to their current cell. */
-  draw(sim: Simulation | null, previous: Atom[], alpha: number): void {
+  /** `alpha` (0..1) is how far into the current step to draw, from `previous` towards the simulation's state. */
+  draw(sim: Simulation | null, previous: Snapshot, alpha: number): void {
     const now = performance.now();
     const dt = Math.min(now - this.lastTime, 100) / 1000;
     this.lastTime = now;
@@ -126,8 +141,8 @@ export class NeonRenderer {
       this.diffGrid(sim, now);
       this.drawRemoved(sim, now);
       if (this.edgesDirty) this.drawEdges(sim);
-      this.drawWalls(sim, now);
-      this.drawAtoms(sim, previous, alpha);
+      this.drawWalls(sim, previous, alpha, now);
+      this.drawAtoms(sim, previous.atoms, alpha);
       if (sim.lives < this.prevLives) this.flashAlpha = 0.35;
       this.prevLives = sim.lives;
     } else {
@@ -265,36 +280,45 @@ export class NeonRenderer {
     g.rect(l.x, l.y, l.width, l.height).stroke({ width: Math.max(1.5, unit * 0.1), color: this.theme.hot, alpha: 0.9 });
   }
 
-  /** Growing halves: flickering beams with a bright tip, so a vulnerable wall never looks finished. */
-  private drawWalls(sim: Simulation, now: number): void {
+  /**
+   * Growing halves: flickering beams with a bright tip, so a vulnerable wall never looks finished.
+   * The simulation grows a half one cell per step (docs/classic-rules.md); the tip glides between
+   * steps, from where it was before the step to where it is now, in step with the atoms.
+   */
+  private drawWalls(sim: Simulation, previous: Snapshot, alpha: number, now: number): void {
     const l = this.layout!;
     const g = this.walls.clear();
     const unit = Math.min(l.cellW, l.cellH);
-    let tip = 0;
-    for (const half of [sim.halves.a, sim.halves.b]) {
+    let tipIndex = 0;
+    for (const slot of ['a', 'b'] as const) {
+      const half = sim.halves[slot];
       if (!half) continue;
       const first = half.cells[0];
       const head = half.cells[half.cells.length - 1];
-      const cx = (c: { x: number }) => l.x + (c.x + 0.5) * l.cellW;
-      const cy = (c: { y: number }) => l.y + (c.y + 0.5) * l.cellH;
-      // Start at the cell edge the wall grows away from, end at the head's centre.
-      const sx = cx(first) - half.dx * l.cellW * 0.5;
-      const sy = cy(first) - half.dy * l.cellH * 0.5;
+      // Start at the cell edge the wall grows away from.
+      const sx = l.x + (first.x + 0.5 - half.dx * 0.5) * l.cellW;
+      const sy = l.y + (first.y + 0.5 - half.dy * 0.5) * l.cellH;
+      // How far the tip reaches from that edge, in cells: the head's centre now, and before the step
+      // (nothing yet for a half that started this step; a different half in the slot counts as new).
+      const before = previous.halves[slot];
+      const was = before && before.x === first.x && before.y === first.y ? before.length - 0.5 : 0;
+      const reach = was + (half.cells.length - 0.5 - was) * alpha;
+      const tip = { x: sx + half.dx * reach * l.cellW, y: sy + half.dy * reach * l.cellH };
       const flicker = 0.65 + 0.35 * Math.sin(now / 37 + head.x * 3 + head.y * 5) * Math.sin(now / 23);
       for (const [width, alpha, color] of [
         [unit * 1.1, 0.12, this.theme.wall],
         [unit * 0.5, 0.35, this.theme.wall],
         [unit * 0.16, flicker, this.theme.hot],
       ] as const) {
-        g.moveTo(sx, sy).lineTo(cx(head), cy(head)).stroke({ width, color, alpha, cap: 'round' });
+        g.moveTo(sx, sy).lineTo(tip.x, tip.y).stroke({ width, color, alpha, cap: 'round' });
       }
-      const s = this.tipSprites[tip++];
+      const s = this.tipSprites[tipIndex++];
       s.visible = true;
-      s.position.set(cx(head), cy(head));
+      s.position.set(tip.x, tip.y);
       s.scale.set(((unit * 2.4) / 64) * (0.85 + 0.25 * Math.sin(now / 60)));
       s.alpha = 0.9;
     }
-    for (; tip < this.tipSprites.length; tip++) this.tipSprites[tip].visible = false;
+    for (; tipIndex < this.tipSprites.length; tipIndex++) this.tipSprites[tipIndex].visible = false;
   }
 
   private drawAtoms(sim: Simulation, previous: Atom[], alpha: number): void {

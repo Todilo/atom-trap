@@ -6,7 +6,7 @@ import { registerSW } from 'virtual:pwa-register';
 import { PointerInput } from './game/input';
 import { cellAt, layoutBoard } from './game/layout';
 import { Progress, Run, type RunKind } from './game/run';
-import { NeonRenderer } from './render/neonRenderer';
+import { NeonRenderer, snapshot, type Snapshot } from './render/neonRenderer';
 import { modeById, type GameModeId } from './game/modes';
 import { MAX_STARS, PUZZLES, PuzzleProgress, startPuzzle, starsFor } from './game/puzzles';
 import { AtomPreview } from './render/atomPreview';
@@ -31,7 +31,7 @@ import {
 } from './shell/screens';
 import { localStore } from './shell/storage';
 import type { ClassicSpeed } from './sim/ruleset';
-import type { Atom, Simulation } from './sim/simulation';
+import type { Simulation } from './sim/simulation';
 
 // Classic (ADR-0010) and Puzzle modes with the neon look (ADR-0004) and synth audio (ADR-0008).
 
@@ -112,7 +112,8 @@ let mode: Mode = 'menu';
 let run: Run | null = null;
 /** The puzzle in progress, if any. */
 let puzzle: { index: number; sim: Simulation } | null = null;
-let previous: Atom[] = [];
+/** The simulation before its latest step, for drawing smoothly between steps. */
+let previous: Snapshot = { atoms: [], halves: { a: null, b: null } };
 let accumulator = 0;
 /** While the first-play hint shows, the level waits for the player's first wall. */
 let hintActive = false;
@@ -132,10 +133,6 @@ function setHint(show: boolean): void {
 }
 
 const sim = (): Simulation | null => run?.sim ?? puzzle?.sim ?? null;
-
-function snapshot(s: Simulation): Atom[] {
-  return s.atoms.map((a) => ({ ...a }));
-}
 
 /** Redraws the screen on show, for switches and tabs that change it in place. */
 let redraw: (() => void) | null = null;
