@@ -1,18 +1,13 @@
-// Plays every puzzle many times with the bot (src/game/puzzleBot.ts) and suggests pars from the results.
+// Plays every puzzle many times with the bot (src/game/bot.ts) and suggests pars from the results.
 // Run with `npm run tune-puzzles` (optionally `-- 1000` for runs per puzzle). Copy the suggested pars
 // into PUZZLES in src/game/puzzles.ts, then adjust them from real play.
 //
 // The bot looks ahead on a copy of the game, which no human can, so its best results are out of reach.
 // Instead: three stars at the expert bot's typical result, two stars at the casual bot's.
-import { CASUAL, EXPERT, playPuzzleBot, type BotOptions } from '../src/game/puzzleBot';
+import { CASUAL, EXPERT, medianWalls, parFromRuns, playPuzzleBot, type BotOptions } from '../src/game/bot';
 import { PUZZLES, type Puzzle } from '../src/game/puzzles';
 
 const runs = Number(process.argv[2]) || 400;
-
-const median = (xs: number[]) => {
-  const s = [...xs].sort((a, b) => a - b);
-  return s.length ? s[Math.floor((s.length - 1) / 2)] : NaN;
-};
 
 function play(p: Puzzle, options: BotOptions) {
   const walls: number[] = [];
@@ -22,7 +17,7 @@ function play(p: Puzzle, options: BotOptions) {
     livesLost += result.livesLost;
     if (result.cleared) walls.push(result.walls);
   }
-  return { cleared: walls.length / runs, median: median(walls), livesLost: livesLost / runs };
+  return { walls, cleared: walls.length / runs, median: medianWalls(walls), livesLost: livesLost / runs };
 }
 
 console.log(`Bot results, ${runs} runs per puzzle and skill\n`);
@@ -30,8 +25,7 @@ console.log('#   Puzzle            Atoms  Expert: cleared  walls  lives lost   C
 PUZZLES.forEach((p, i) => {
   const expert = play(p, EXPERT);
   const casual = play(p, CASUAL);
-  const three = expert.median;
-  const two = Math.max(three + 1, casual.median);
+  const [three, two] = parFromRuns(expert.walls, casual.walls);
   const pct = (x: number) => `${Math.round(x * 100)}%`;
   console.log(
     [
