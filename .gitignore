@@ -15,3 +15,8 @@ dev-dist/
 *.wav
 *.zip
 *.asm
+dist-app/
+
+# The Play upload key never goes in the repo (store/README.md)
+*.jks
+*.keystore

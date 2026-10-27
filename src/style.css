@@ -756,6 +756,11 @@ body {
   text-shadow: 0 0 16px var(--accent-soft);
 }
 
+/* Words that read wrong split across lines, like "Par 5". */
+#screen .keep {
+  white-space: nowrap;
+}
+
 /* "Neon" in the name: the second word, in the highlight colour. */
 #screen .neon {
   color: var(--highlight);
@@ -1758,8 +1763,9 @@ body {
 }
 
 /* Arcade's chain chip: lights up while a chain runs; its bar drains until the chain ends. */
+/* A minimum, not a fixed width: the label, pips and multiplier must all fit. */
 #hud .chip.chain {
-  width: 112px;
+  min-width: 112px;
 }
 
 #hud .chain-value {
@@ -1820,7 +1826,7 @@ body {
 
 @media (max-height: 520px), (orientation: portrait) and (max-width: 520px) {
   #hud .chip.chain {
-    width: 84px;
+    min-width: 84px;
   }
   #hud .chain-value {
     font-size: 15px;

@@ -16,6 +16,7 @@ import { Demo } from './shell/demo';
 import { ArcadeFeedback, countUp } from './shell/feedback';
 import { Haptics } from './shell/haptics';
 import { watchTurn } from './shell/turn';
+import { IN_APP } from './shell/platform';
 import { Hud } from './shell/hud';
 import { Install } from './shell/install';
 import { listenToKeys } from './shell/keyboard';
@@ -46,6 +47,7 @@ import { localStore } from './shell/storage';
 import { Updates } from './shell/updates';
 import { LAYOUTS } from './sim/layouts';
 import { createLevel } from './sim/levels';
+import { BotPlayer } from './game/bot';
 import type { ClassicSpeed } from './sim/ruleset';
 import type { GameEvent, Simulation } from './sim/simulation';
 
@@ -533,6 +535,22 @@ listenToKeys({
   },
 });
 
+// Android's back button in the app: pause a game, otherwise press the screen's own way back
+// (resume, back to the pause menu, back to the menu); on the menu itself, it closes the app.
+if (IN_APP) {
+  void import('./shell/native').then(({ listenToBackButton }) =>
+    listenToBackButton(() => {
+      if (mode === 'playing') return (pause(), true);
+      if (screenEl.hidden) return false;
+      for (const action of ['resume', 'pause-menu', 'menu']) {
+        const button = screenEl.querySelector<HTMLElement>(`[data-action="${action}"]`);
+        if (button) return (button.click(), true);
+      }
+      return false;
+    }),
+  );
+}
+
 hud.pause.addEventListener('click', () => (mode === 'paused' ? resume() : pause()));
 
 let layout = layoutBoard(28, 20, 0, 0, 1, 1);
@@ -765,6 +783,23 @@ if (import.meta.env.DEV) {
       fakeUpdate: () => (updates.ready = true),
       layouts: LAYOUTS.map((l) => l.id),
       puzzleLog: () => printPuzzleLog(localStore),
+      // `level(6)` jumps the Classic run to that level; `autoplay(300)` has the bot play that many steps
+      // of whatever game is on, at once. Both are for the store screenshots (scripts/store-capture.mjs).
+      level: (n: number) => {
+        if (!run) startRun('continue');
+        run!.level = n;
+        run!.sim = createLevel({ level: n, speed: prefsStore.speed, seed: (Math.random() * 0xffffffff) >>> 0 });
+        beginLevel();
+      },
+      autoplay: (steps: number) => {
+        const bot = new BotPlayer(7);
+        for (let i = 0; i < steps && mode === 'playing'; i++) {
+          const s = sim()!;
+          bot.act(s);
+          previous = snapshot(s);
+          handleStepEvents(s);
+        }
+      },
       tryLayout: (id: string) => {
         if (!run) startRun('continue');
         run!.sim = createLevel({ level: run!.level, speed: prefsStore.speed, layout: id, seed: (Math.random() * 0xffffffff) >>> 0 });

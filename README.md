@@ -4,6 +4,8 @@ Trap bouncing atoms by building walls, clear 75% of the chamber, then move on to
 
 **Play:** https://todilo.github.io/atom-trap/. On Android, open it in Chrome and choose *Install app*.
 
+**Android app:** built with Capacitor on GitHub Actions for Google Play; see [store/README.md](store/README.md) and ADR-0020.
+
 ## How to play
 
 - **Goal:** trap the bouncing atoms by building walls. Clear 75% of the chamber to reach the next level, and each level adds an atom.

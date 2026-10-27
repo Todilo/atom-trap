@@ -94,4 +94,16 @@ writeFileSync(
   'public/icons/favicon.svg',
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="#05060f"/><rect x="9" y="15" width="46" height="34" fill="none" stroke="#3ee8ff" stroke-width="3"/><line x1="38" y1="15" x2="38" y2="49" stroke="#3ee8ff" stroke-width="3"/><circle cx="23" cy="32" r="6" fill="#ff40c8"/></svg>\n`,
 );
-console.log('icons written to public/icons/');
+
+// The Android app's launcher icons (ADR-0020), per screen density: the classic square icon, and the
+// adaptive icon's foreground, drawn small enough to survive any launcher's mask shape.
+const DENSITIES = { mdpi: 1, hdpi: 1.5, xhdpi: 2, xxhdpi: 3, xxxhdpi: 4 };
+for (const [name, scale] of Object.entries(DENSITIES)) {
+  const dir = `android/app/src/main/res/mipmap-${name}`;
+  mkdirSync(dir, { recursive: true });
+  const icon = render(48 * scale, 0);
+  writeFileSync(`${dir}/ic_launcher.png`, icon);
+  writeFileSync(`${dir}/ic_launcher_round.png`, icon);
+  writeFileSync(`${dir}/ic_launcher_foreground.png`, render(108 * scale, 0.17));
+}
+console.log('icons written to public/icons/ and android/app/src/main/res/');

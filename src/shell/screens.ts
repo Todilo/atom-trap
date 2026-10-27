@@ -5,6 +5,7 @@ import { PUZZLES } from '../game/puzzles';
 import { layoutById } from '../sim/layouts';
 import { MAX_NAME_LENGTH, type HighScore, type RunMode } from '../game/run';
 import { ATOM_STYLES, THEMES, type AtomStyle } from '../render/themes';
+import { IN_APP } from './platform';
 import type { ClassicSpeed, LevelBonus } from '../sim/ruleset';
 
 /**
@@ -234,6 +235,16 @@ export interface UpdateInfo {
   status: 'idle' | 'checking' | 'latest' | 'failed' | 'ready' | 'unavailable';
 }
 
+/**
+ * A link to one of the site's own pages. The app (ADR-0020) opens them from the website instead,
+ * in the phone's browser, where a link out of the app goes when it isn't opened in a new window.
+ */
+function pageLink(path: string, text: string): string {
+  return IN_APP
+    ? `<a href="https://todilo.github.io/atom-trap/${path}">${text}</a>`
+    : `<a href="${path}" target="_blank" rel="noopener">${text}</a>`;
+}
+
 function updateRow(u: UpdateInfo): string {
   const note = {
     idle: '',
@@ -241,7 +252,7 @@ function updateRow(u: UpdateInfo): string {
     latest: 'You have the latest version.',
     failed: 'Couldn’t check. Are you offline?',
     ready: 'A new version is ready.',
-    unavailable: 'Updates work in the deployed game.',
+    unavailable: IN_APP ? 'Updates come from Google Play.' : 'Updates work in the deployed game.',
   }[u.status];
   const action =
     u.status === 'ready'
@@ -253,7 +264,7 @@ function updateRow(u: UpdateInfo): string {
     <div class="setting version-row">
       <div>
         <div class="setting-label">Version</div><div class="setting-hint">${u.version}${note ? ` · ${note}` : ''}</div>
-        <div class="setting-hint">© 2026 Christian Klinton · <a href="licenses.txt" target="_blank" rel="noopener">Open-source licenses</a></div>
+        <div class="setting-hint">© 2026 Christian Klinton · ${pageLink('privacy.html', 'Privacy')} · ${pageLink('licenses.txt', 'Open-source licenses')}</div>
       </div>
       ${action}
     </div>`;
@@ -513,7 +524,7 @@ export function puzzlesScreen(summary: PuzzleSummary): string {
       <button type="button" class="puzzle-tile${open ? '' : ' locked'}" data-action="puzzle:${i}" ${open ? '' : 'disabled'} aria-label="Puzzle ${i + 1}, ${p.name}${open ? `, ${summary.stars[i]} of 3 stars` : ', locked'}">
         ${boardThumb(p.layout)}
         <span class="puzzle-head"><span class="puzzle-num">${i + 1}</span><span class="puzzle-name">${p.name}</span></span>
-        <span class="puzzle-foot">${open ? stars(summary.stars[i], 'small') : '<span class="dim">Locked</span>'}<span class="dim">${summary.bestWalls[i] !== null ? `Best ${summary.bestWalls[i]} · ` : ''}Par ${p.par[0]}</span></span>
+        <span class="puzzle-foot">${open ? stars(summary.stars[i], 'small') : '<span class="dim">Locked</span>'}<span class="dim">${summary.bestWalls[i] !== null ? `<span class="keep">Best ${summary.bestWalls[i]}</span> · ` : ''}<span class="keep">Par ${p.par[0]}</span></span></span>
       </button>`;
   }).join('');
   return `

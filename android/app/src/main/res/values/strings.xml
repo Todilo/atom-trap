@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Atom Trap: Neon</string>
+    <string name="title_activity_main">Atom Trap: Neon</string>
+    <string name="package_name">com.todilo.atomtrapneon</string>
+    <string name="custom_url_scheme">com.todilo.atomtrapneon</string>
+</resources>

@@ -1,10 +1,21 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import { fileURLToPath } from 'node:url';
 
 // Served from https://todilo.github.io/atom-trap/ (ADR-0011), so every URL is relative to this base.
 const base = '/atom-trap/';
 
-export default defineConfig({
+// `vite build --mode app` builds the Android app (ADR-0020): the files load from inside the app, so
+// paths are relative, and there's no service worker; Google Play delivers updates instead.
+export default defineConfig(({ mode }) => mode === 'app' ? appConfig : webConfig);
+
+const appConfig = defineConfig({
+  base: './',
+  build: { outDir: 'dist-app' },
+  resolve: { alias: { 'virtual:pwa-register': fileURLToPath(new URL('src/shell/noServiceWorker.ts', import.meta.url)) } },
+});
+
+const webConfig = defineConfig({
   base,
   plugins: [
     VitePWA({
