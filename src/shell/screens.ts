@@ -186,7 +186,7 @@ export function titleScreen(prefs: Prefs, tables: Record<RunMode, ScoreTable>, p
   return `
     <div class="page title">
       <header class="topbar">
-        <div class="brand">${logo}<div><h1>Atom Trap</h1><p class="tagline">A neon tribute to JezzBall (1992)</p></div></div>
+        <div class="brand">${logo}<div><h1>Atom Trap</h1><p class="tagline">Build walls. Trap atoms.</p></div></div>
         <nav class="topnav" aria-label="Menu">
           ${canInstall ? button('install', `${icon.download}<span>Install app</span>`, 'nav') : ''}
           ${button('achievements', `${icon.medal}<span>Achievements</span>`, 'nav')}
@@ -251,7 +251,10 @@ function updateRow(u: UpdateInfo): string {
         : button('check-update', u.status === 'checking' ? 'Checking…' : 'Check for updates', 'secondary small', u.status === 'checking' ? 'disabled' : '');
   return `
     <div class="setting version-row">
-      <div><div class="setting-label">Version</div><div class="setting-hint">${u.version}${note ? ` · ${note}` : ''}</div></div>
+      <div>
+        <div class="setting-label">Version</div><div class="setting-hint">${u.version}${note ? ` · ${note}` : ''}</div>
+        <div class="setting-hint">© 2026 Christian Klinton · <a href="licenses.txt" target="_blank" rel="noopener">Open-source licenses</a></div>
+      </div>
       ${action}
     </div>`;
 }

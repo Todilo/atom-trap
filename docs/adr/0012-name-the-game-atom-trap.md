@@ -18,3 +18,7 @@
 - No original branding appears in the product: no JezzBall name as the title, no original logo, art or sounds.
 - Internal docs can keep referring to "the original" and quote its rule terms (atom, wallbuilder) when describing it.
 - The local working folder (`JezzBall`) doesn't need renaming. Only the repo and the published app carry the name.
+
+## Update: no JezzBall name in the product
+
+Ahead of a Play Store release (store policies reject other companies' trademarks in listings), the tagline became **"Build walls. Trap atoms."** and the description **"Atom Trap: build walls, trap bouncing atoms, clear the board."** The original is now credited only in the README. The project is also no longer open to reuse: `LICENSE` reserves all rights, and the game ships the licenses of its open-source dependencies (`public/licenses.txt`, linked from Settings).

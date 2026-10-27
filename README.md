@@ -1,6 +1,6 @@
 # Atom Trap
 
-*A neon tribute to JezzBall (1992).* Trap bouncing atoms by building walls, clear 75% of the chamber, then move on to the next level. Atom Trap is an installable web game (PWA) built with TypeScript, Vite and PixiJS.
+Trap bouncing atoms by building walls, clear 75% of the chamber, then move on to the next level. Atom Trap is an installable web game (PWA) built with TypeScript, Vite and PixiJS.
 
 **Play:** https://todilo.github.io/atom-trap/. On Android, open it in Chrome and choose *Install app*.
 
@@ -30,4 +30,10 @@ npm run dev
 
 ## Credits
 
-Atom Trap is an independent fan remake. It is not affiliated with or endorsed by Microsoft. JezzBall was created by Dima Pavlovsky and published by Microsoft in 1992. All code, art and sound in this repository are original.
+Atom Trap's Classic mode is inspired by JezzBall (Dima Pavlovsky, Microsoft, 1992). Atom Trap is not affiliated with or endorsed by Microsoft, and the JezzBall name is not used in the game. All code, art and sound in this repository are original.
+
+Open-source software used in the game is listed with its licenses in `public/licenses.txt` (`npm run licenses` refreshes it; the build does too).
+
+## License
+
+Copyright (c) 2026 Christian Klinton. All rights reserved: the code is public to read, not to reuse. See [LICENSE](LICENSE).

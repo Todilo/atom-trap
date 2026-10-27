@@ -13,7 +13,7 @@ export default defineConfig({
       manifest: {
         name: 'Atom Trap',
         short_name: 'Atom Trap',
-        description: 'Atom Trap: a neon tribute to JezzBall (1992)',
+        description: 'Atom Trap: build walls, trap bouncing atoms, clear the board.',
         start_url: base,
         scope: base,
         display: 'fullscreen',
@@ -27,7 +27,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,woff2,txt}'],
       },
     }),
   ],

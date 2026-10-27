@@ -23,7 +23,7 @@ export const GAME_MODES: GameMode[] = [
   {
     id: 'classic',
     name: 'Classic',
-    blurb: 'The 1992 rules. Clear 75% of the board before time runs out.',
+    blurb: 'The original rules. Clear 75% of the board before time runs out.',
     rules: ['Lives = atoms', 'Clear 75%', 'Timer', 'One more atom per level'],
     footnote: '',
     available: true,

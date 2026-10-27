@@ -1044,6 +1044,12 @@ body {
   color: var(--text-dim);
 }
 
+#screen .setting-hint a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 #screen .switch {
   flex: none;
   display: flex;
