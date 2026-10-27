@@ -8,7 +8,14 @@ import type { GameEvent } from '../sim/simulation';
 export interface AudioSettings {
   music: boolean;
   sfx: boolean;
+  /** 0 to 1, from the Settings sliders. */
+  musicVolume: number;
+  sfxVolume: number;
 }
+
+/** Full-volume levels of the two buses; the sliders scale them. */
+const MUSIC_LEVEL = 0.55;
+const SFX_LEVEL = 0.9;
 
 const midi = (n: number) => 440 * 2 ** ((n - 69) / 12);
 
@@ -95,6 +102,16 @@ export class AudioEngine {
     if (!on) this.setGrowing(0);
   }
 
+  setMusicVolume(v: number): void {
+    this.settings.musicVolume = v;
+    if (this.ctx && this.settings.music) this.musicBus.gain.setTargetAtTime(MUSIC_LEVEL * v, this.ctx.currentTime, 0.05);
+  }
+
+  setSfxVolume(v: number): void {
+    this.settings.sfxVolume = v;
+    if (this.ctx) this.sfxBus.gain.setTargetAtTime(SFX_LEVEL * v, this.ctx.currentTime, 0.05);
+  }
+
   /** Hum while wall halves grow; pitch rises with the wall's length. 0 = silent. */
   setGrowing(length: number): void {
     const ctx = this.ctx;
@@ -155,7 +172,7 @@ export class AudioEngine {
     const master = ctx.createDynamicsCompressor();
     master.connect(ctx.destination);
     this.sfxBus = ctx.createGain();
-    this.sfxBus.gain.value = 0.9;
+    this.sfxBus.gain.value = SFX_LEVEL * this.settings.sfxVolume;
     this.sfxBus.connect(master);
     this.musicBus = ctx.createGain();
     this.musicBus.gain.value = 0;
@@ -250,7 +267,7 @@ export class AudioEngine {
   private startMusic(): void {
     const ctx = this.ctx;
     if (!ctx || this.musicTimer !== null) return;
-    this.musicBus.gain.setTargetAtTime(0.55, ctx.currentTime, 0.8);
+    this.musicBus.gain.setTargetAtTime(MUSIC_LEVEL * this.settings.musicVolume, ctx.currentTime, 0.8);
     this.nextStepTime = ctx.currentTime + 0.1;
     this.musicTimer = window.setInterval(() => this.scheduleMusic(), 100);
   }

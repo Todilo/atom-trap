@@ -58,6 +58,7 @@ export class NeonRenderer {
   private implosions: { x: number; y: number; t0: number }[] = [];
   private popups: { text: Text; x: number; y: number; t0: number; dur: number }[] = [];
   private shakeAmount = 0;
+  private reducedMotion = false;
   private readonly fxLayer = new Container();
   private readonly flash = new Graphics();
   private readonly glow = glowTexture();
@@ -165,7 +166,7 @@ export class NeonRenderer {
       this.drawAtoms(sim, previous.atoms, alpha);
       if (sim.lives < this.prevLives) {
         this.flash.tint = this.theme.flash;
-        this.flashAlpha = 0.35;
+        this.flashAlpha = this.reducedMotion ? 0.12 : 0.35;
       }
       this.prevLives = sim.lives;
     } else {
@@ -429,15 +430,34 @@ export class NeonRenderer {
     this.shake(0.5);
   }
 
+  /** Reduce motion: no screen shake, and softer flashes. */
+  setReducedMotion(on: boolean): void {
+    this.reducedMotion = on;
+    if (on) this.shakeAmount = 0;
+  }
+
   /** A short screen shake; `amount` in cells. */
   shake(amount: number): void {
-    this.shakeAmount = Math.max(this.shakeAmount, amount);
+    if (!this.reducedMotion) this.shakeAmount = Math.max(this.shakeAmount, amount);
   }
 
   /** A bright flash over the board, e.g. when an Arcade board clears. */
   flashBoard(): void {
     this.flash.tint = this.theme.hot;
-    this.flashAlpha = 0.3;
+    this.flashAlpha = this.reducedMotion ? 0.1 : 0.3;
+  }
+
+  /** A cleared board: a flash and sparks flying from all over it. */
+  celebrate(): void {
+    const l = this.layout;
+    if (!l) return;
+    this.flashBoard();
+    this.shake(0.25);
+    for (let i = 0; i < 12; i++) {
+      const x = Math.floor(Math.random() * this.cols);
+      const y = Math.floor(Math.random() * this.rows);
+      this.burst(x, y, i % 3 ? this.theme.wall : this.theme.atom, 8, 1.2);
+    }
   }
 
   private updateFeedback(dt: number, now: number): void {

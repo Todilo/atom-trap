@@ -23,6 +23,7 @@ Open items picked up along the way, with the milestone they belong to (ADR-0010)
 | Attract-mode demo | after v1 | The game opens on the bot playing a board full-screen, "Tap to play" brings up the menu, and an idle title returns to it (ADR-0017). |
 | Daily Challenge | after v1 | One board a day from the date, par from the bot on the device, one scored try, streak and share (ADR-0017). |
 | Arcade core loop | after v1 | Capture atoms in small pockets, one run clock, chains up to ×8, floating points and implosions; own high scores (ADR-0018). A first version with random power-up tiles felt flat and was replaced. |
+| Polish batch | after v1 | Mode intros with animated pictures; clear celebrations with stars popping in and totals counting up; 13 more layouts (19 in all, each checked by the bot); an Install app button; volume sliders; Reduce motion; keyboard shortcuts (Esc/P, Space, R, Enter). |
 
 ## Ideas for after v1
 
@@ -34,6 +35,5 @@ Open items picked up along the way, with the milestone they belong to (ADR-0010)
 | Arcade: new atoms | Heavy, Fast, Splitter and Ghost, one introduced per level (ADR-0018). |
 | Tune Arcade | Pocket size, capture points, chain window and steps, and clock times are first choices. |
 | Tune puzzle pars from real play | Dev builds log attempts (`atomTrap.puzzleLog()`); adjust pars once there's enough play. |
-| Reduce motion setting | Calmer trails and flashes; atom styles like Spark ball and Firefly swarm are the busiest. |
 | Zen mode | Dropped: with no timer and no lives there was nothing to win (ADR-0014). |
 | Play Store release | Wrap the PWA with Capacitor (ADR-0001). |

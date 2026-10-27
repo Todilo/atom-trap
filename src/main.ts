@@ -22,6 +22,8 @@ import {
   highScoresScreen,
   levelClearedScreen,
   pauseScreen,
+  introScreen,
+  type IntroMode,
   arcadeClearedBanner,
   attractScreen,
   dailyResultScreen,
@@ -139,17 +141,35 @@ function applyTheme(t: Theme): void {
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', cssVariables(t)['--bg']);
 }
 applyTheme(theme);
-const audio = new AudioEngine(localStore.get<AudioSettings>('audio', { music: true, sfx: true }));
+const audio = new AudioEngine({ music: true, sfx: true, musicVolume: 1, sfxVolume: 1, ...localStore.get<Partial<AudioSettings>>('audio', {}) });
 const saveAudio = () => localStore.set('audio', audio.settings);
 const prefsStore = {
   haptics: true,
   speed: 'fast' as ClassicSpeed,
   mode: 'classic' as GameModeId,
-  ...localStore.get<{ haptics?: boolean; speed?: ClassicSpeed; mode?: GameModeId }>('prefs', {}),
+  // Calmer effects: no shake, demo or pop-ins. On by default when the device asks for reduced motion.
+  reduceMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  ...localStore.get<{ haptics?: boolean; speed?: ClassicSpeed; mode?: GameModeId; reduceMotion?: boolean }>('prefs', {}),
 };
 const haptics = new Haptics(prefsStore.haptics);
-const savePrefs = () => localStore.set('prefs', { haptics: haptics.enabled, speed: prefsStore.speed, mode: prefsStore.mode });
-const prefs = (): Prefs => ({ ...audio.settings, haptics: haptics.enabled, speed: prefsStore.speed, theme: theme.id, atomStyle, mode: prefsStore.mode });
+const savePrefs = () =>
+  localStore.set('prefs', { haptics: haptics.enabled, speed: prefsStore.speed, mode: prefsStore.mode, reduceMotion: prefsStore.reduceMotion });
+const prefs = (): Prefs => ({
+  ...audio.settings,
+  haptics: haptics.enabled,
+  speed: prefsStore.speed,
+  theme: theme.id,
+  atomStyle,
+  mode: prefsStore.mode,
+  reduceMotion: prefsStore.reduceMotion,
+});
+const motionReduced = () => prefsStore.reduceMotion;
+/** Applies Reduce motion to the effects and to the page's CSS animations. */
+function applyMotion(): void {
+  renderer.setReducedMotion(prefsStore.reduceMotion);
+  document.documentElement.classList.toggle('reduce-motion', prefsStore.reduceMotion);
+}
+applyMotion();
 
 // Audio unlock: browsers only allow sound after a user gesture, so start it on the first tap or click.
 window.addEventListener('pointerdown', () => audio.unlock(), { capture: true });
@@ -174,7 +194,6 @@ let puzzle: { def: Puzzle; index: number | null; daily: { key: string; scored: b
  * Silent, and off for reduced motion (the game then opens on the menu).
  */
 let demo: { sim: Simulation; bot: BotPlayer; endedAt: number | null } | null = null;
-const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 /** A lighter bot than the tuner's, so its look-ahead never makes a frame stutter on a phone. */
 const DEMO_BOT = { candidates: 10, sloppiness: 0.3 };
 
@@ -197,7 +216,7 @@ let lastInput = performance.now();
 for (const type of ['pointerdown', 'pointermove', 'keydown'] as const) window.addEventListener(type, () => (lastInput = performance.now()), { capture: true });
 
 function showAttract(): void {
-  if (reducedMotion.matches) return showMenu();
+  if (motionReduced()) return showMenu();
   mode = 'menu';
   run = null;
   puzzle = null;
@@ -289,7 +308,7 @@ function showMenu(): void {
   setHint(false);
   void checkForUpdate().catch(() => {});
   const draw = () =>
-    showScreen(titleScreen(prefs(), scoreTables(), puzzleSummary(), dailySummary()), 'page', draw);
+    showScreen(titleScreen(prefs(), scoreTables(), puzzleSummary(), dailySummary(), installOffer !== null), 'page', draw);
   draw();
 }
 
@@ -366,9 +385,53 @@ function showPause(): void {
   draw();
 }
 
+/**
+ * The browser's offer to install the game as an app (Chrome, Edge, Android), kept for the title's
+ * Install button: many phone players never find "Add to home screen" in the browser menu.
+ */
+type InstallOffer = Event & { prompt(): Promise<void>; userChoice: Promise<unknown> };
+let installOffer: InstallOffer | null = null;
+const redrawTitle = () => screenEl.querySelector('.page.title') && redraw?.();
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  installOffer = e as InstallOffer;
+  redrawTitle();
+});
+window.addEventListener('appinstalled', () => {
+  installOffer = null;
+  redrawTitle();
+});
+
+async function install(): Promise<void> {
+  const offer = installOffer;
+  if (!offer) return;
+  await offer.prompt();
+  await offer.userChoice;
+  // An offer can only be used once; the browser sends a new one if it still applies.
+  installOffer = null;
+  redrawTitle();
+}
+
+/** A game waiting for the player to read its mode's intro. */
+let afterIntro: (() => void) | null = null;
+
+/** The first game of Puzzle, Daily or Arcade starts with a short explanation of the mode. */
+function withIntro(m: IntroMode, start: () => void): void {
+  const seen = localStore.get<Partial<Record<IntroMode, boolean>>>('introSeen', {});
+  if (seen[m]) return start();
+  afterIntro = () => {
+    localStore.set('introSeen', { ...localStore.get('introSeen', {}), [m]: true });
+    start();
+  };
+  showScreen(introScreen(m), 'dialog');
+}
+
 /** Starts a Classic or Arcade run, as selected on the title screen (Arcade plays at Fast). */
 function startRun(kind: RunKind): void {
   const runMode: RunMode = prefsStore.mode === 'arcade' ? 'arcade' : 'classic';
+  if (runMode === 'arcade' && mode === 'menu' && !localStore.get<Record<string, boolean>>('introSeen', {}).arcade) {
+    return withIntro('arcade', () => startRun(kind));
+  }
   puzzle = null;
   run = new Run(kind, progressFor(runMode), runMode === 'arcade' ? 'fast' : prefsStore.speed);
   beginLevel();
@@ -376,6 +439,7 @@ function startRun(kind: RunKind): void {
 
 function playPuzzle(index: number): void {
   if (!puzzleProgress.unlocked(index) || !PUZZLES[index]) return;
+  if (!localStore.get<Record<string, boolean>>('introSeen', {}).puzzle) return withIntro('puzzle', () => playPuzzle(index));
   run = null;
   puzzle = { def: PUZZLES[index], index, daily: null, sim: startPuzzle(PUZZLES[index]) };
   beginLevel();
@@ -385,6 +449,8 @@ function playPuzzle(index: number): void {
 function playDaily(practice: boolean): void {
   const key = dayKey(new Date());
   if (dailyParReady?.key !== key) return;
+  // Before the try is used up, so reading about it doesn't cost it.
+  if (!localStore.get<Record<string, boolean>>('introSeen', {}).daily) return withIntro('daily', () => playDaily(practice));
   const def: Puzzle = { ...dailyBoard(key), par: dailyParReady.par };
   const scored = !practice && dailyProgress.start(key, def.par);
   run = null;
@@ -498,8 +564,16 @@ screenEl.addEventListener('click', (e) => {
       return void updateSW(true);
     case 'show-hint':
       localStore.set('hintSeen', false);
-      (e.target as HTMLElement).closest('button')!.textContent = 'The hint shows on your next game';
+      localStore.set('introSeen', {});
+      (e.target as HTMLElement).closest('button')!.textContent = 'Tutorials show again on your next games';
       return;
+    case 'install':
+      return void install();
+    case 'intro-ok': {
+      const start = afterIntro;
+      afterIntro = null;
+      return start?.();
+    }
     case 'menu':
       return showMenu();
     case 'resume':
@@ -511,6 +585,11 @@ screenEl.addEventListener('click', (e) => {
     case 'toggle-sfx':
       audio.setSfx(!audio.settings.sfx);
       saveAudio();
+      return redrawSettings();
+    case 'toggle-motion':
+      prefsStore.reduceMotion = !prefsStore.reduceMotion;
+      savePrefs();
+      applyMotion();
       return redrawSettings();
     case 'toggle-haptics':
       haptics.enabled = !haptics.enabled;
@@ -546,6 +625,21 @@ function saveName(): void {
   showGameOver();
 }
 
+// Volume sliders in Settings: heard while dragging, saved when let go.
+screenEl.addEventListener('input', (e) => {
+  const slider = e.target as HTMLInputElement;
+  const v = Number(slider.value) / 100;
+  if (slider.dataset.volume === 'music') audio.setMusicVolume(v);
+  else if (slider.dataset.volume === 'sfx') audio.setSfxVolume(v);
+});
+screenEl.addEventListener('change', (e) => {
+  const slider = e.target as HTMLInputElement;
+  if (!slider.dataset.volume) return;
+  saveAudio();
+  // A sample of the effects at the new volume.
+  if (slider.dataset.volume === 'sfx') audio.event({ type: 'wall-completed', slot: 'a' });
+});
+
 // Enter in the name field saves too.
 screenEl.addEventListener('submit', (e) => {
   e.preventDefault();
@@ -556,6 +650,36 @@ function nextLevel(): void {
   run!.nextLevel();
   beginLevel();
 }
+
+/**
+ * Keyboard shortcuts for desktop: Esc or P pauses and resumes, Space turns the next wall, R restarts
+ * a puzzle (not a scored Daily try), Enter continues from a result. Ignored while typing a name.
+ */
+window.addEventListener('keydown', (e) => {
+  const typing = e.target instanceof Element && e.target.closest('input, textarea');
+  if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
+  const key = e.key.toLowerCase();
+  if ((key === 'escape' || key === 'p') && (mode === 'playing' || mode === 'paused')) {
+    e.preventDefault();
+    return mode === 'paused' ? resume() : pause();
+  }
+  if (key === ' ' && mode === 'playing') {
+    e.preventDefault();
+    input.mouseOrientation = input.mouseOrientation === 'vertical' ? 'horizontal' : 'vertical';
+    return;
+  }
+  if (key === 'r' && puzzle && (mode === 'playing' || mode === 'paused' || mode === 'over' || mode === 'cleared') && !puzzle.daily?.scored) {
+    return puzzle.daily ? playDaily(true) : playPuzzle(puzzle.index!);
+  }
+  if (key === 'enter' && mode === 'cleared' && !puzzle?.daily) {
+    // The dialog's main button: the next level or puzzle (a Daily's would share, so not that one).
+    const next = screenEl.querySelector<HTMLElement>('.dialog .primary');
+    if (next) {
+      e.preventDefault();
+      next.click();
+    }
+  }
+});
 
 hud.pause.addEventListener('click', () => (mode === 'paused' ? resume() : pause()));
 
@@ -612,6 +736,37 @@ function logPuzzleAttempt(s: Simulation, cleared: boolean): void {
   localStore.set('puzzleLog', log.slice(-1000));
 }
 
+/**
+ * A cleared board gets a moment of its own before the result: the board flashes and sparks fly,
+ * then the dialog opens with its stars popping in and its totals counting up. Reduce motion skips it.
+ */
+function celebrate(show: () => void): void {
+  const done = () => {
+    show();
+    if (!motionReduced()) countUp(screenEl);
+  };
+  if (motionReduced()) return done();
+  renderer.celebrate();
+  const s = sim();
+  setTimeout(() => {
+    if (sim() === s && mode === 'cleared') done();
+  }, 800);
+}
+
+/** Counts each `[data-count]` number in `root` up from zero. */
+function countUp(root: HTMLElement): void {
+  for (const el of root.querySelectorAll<HTMLElement>('[data-count]')) {
+    const to = Number(el.dataset.count);
+    const t0 = performance.now();
+    const tick = (now: number) => {
+      const k = Math.min(1, (now - t0) / 900);
+      el.textContent = Math.round(to * (1 - (1 - k) ** 3)).toLocaleString('en-US');
+      if (k < 1 && el.isConnected) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+}
+
 function handleStepEvents(s: Simulation): void {
   for (const e of s.step()) {
     audio.event(e);
@@ -622,18 +777,17 @@ function handleStepEvents(s: Simulation): void {
       mode = cleared ? 'cleared' : 'over';
       const { key, scored } = puzzle.daily;
       if (scored) dailyProgress.finish(key, cleared, s.wallsPlaced);
-      showScreen(
-        dailyResultScreen({ number: dayNumber(key), cleared, walls: s.wallsPlaced, par: puzzle.def.par, scored, streak: dailyProgress.streak(key) }),
-      );
+      const result = dailyResultScreen({ number: dayNumber(key), cleared, walls: s.wallsPlaced, par: puzzle.def.par, scored, streak: dailyProgress.streak(key) });
+      if (cleared) celebrate(() => showScreen(result));
+      else showScreen(result);
     } else if (puzzle?.index != null && e.type === 'level-cleared') {
       mode = 'cleared';
       logPuzzleAttempt(s, true);
       const stars = starsFor(puzzle.def, s.wallsPlaced);
       const improved = puzzleProgress.record(puzzle.index, s.wallsPlaced);
       const best = puzzleProgress.bestWalls[puzzle.index] ?? s.wallsPlaced;
-      showScreen(
-        puzzleClearedScreen({ index: puzzle.index, stars, improved, wallsUsed: s.wallsPlaced, best, hasNext: puzzle.index + 1 < PUZZLES.length }),
-      );
+      const result = puzzleClearedScreen({ index: puzzle.index, stars, improved, wallsUsed: s.wallsPlaced, best, hasNext: puzzle.index + 1 < PUZZLES.length });
+      celebrate(() => showScreen(result));
     } else if (puzzle?.index != null && e.type === 'game-over') {
       logPuzzleAttempt(s, false);
       mode = 'over';
@@ -651,18 +805,17 @@ function handleStepEvents(s: Simulation): void {
       }, 1500);
     } else if (e.type === 'level-cleared') {
       mode = 'cleared';
-      showScreen(
-        levelClearedScreen({
-          mode: modeById(prefsStore.mode).name,
-          level: run!.level,
-          coverage: Math.floor(s.coverage * 100),
-          livesLeft: s.lives,
-          bonus: e.bonus,
-          levelScore: s.score,
-          total: run!.score,
-          scored: run!.kind === 'scored',
-        }),
-      );
+      const result = levelClearedScreen({
+        mode: modeById(prefsStore.mode).name,
+        level: run!.level,
+        coverage: Math.floor(s.coverage * 100),
+        livesLeft: s.lives,
+        bonus: e.bonus,
+        levelScore: s.score,
+        total: run!.score,
+        scored: run!.kind === 'scored',
+      });
+      celebrate(() => showScreen(result));
     } else if (e.type === 'game-over') {
       mode = 'over';
       gameOver = { reason: e.reason, rank: run!.finish(), savedName: null };
@@ -674,7 +827,7 @@ function handleStepEvents(s: Simulation): void {
 renderer.app.ticker.add((ticker) => {
   if (demoShowing()) return drawDemo(ticker.deltaMS);
   // A title screen left alone goes back to the demo.
-  if (mode === 'menu' && !reducedMotion.matches && screenEl.querySelector('.page.title') && performance.now() - lastInput > ATTRACT_AFTER_MS) {
+  if (mode === 'menu' && !motionReduced() && screenEl.querySelector('.page.title') && performance.now() - lastInput > ATTRACT_AFTER_MS) {
     return showAttract();
   }
   if (demo) {

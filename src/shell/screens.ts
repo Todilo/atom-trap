@@ -20,6 +20,7 @@ const button = (action: string, label: string, cls = '', attrs = '') =>
 
 /** Stroke icons, coloured by CSS (`currentColor`). */
 const icon = {
+  download: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>',
   trophy:
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/></svg>',
   sliders:
@@ -51,6 +52,8 @@ const MODE_ART: Record<GameModeId, string> = {
 export interface Prefs {
   music: boolean;
   sfx: boolean;
+  musicVolume: number;
+  sfxVolume: number;
   haptics: boolean;
   speed: ClassicSpeed;
   /** Colour theme id. */
@@ -58,6 +61,7 @@ export interface Prefs {
   atomStyle: AtomStyle;
   /** The mode selected on the title screen. */
   mode: GameModeId;
+  reduceMotion: boolean;
 }
 
 /** Puzzle progress, for the title screen, the puzzle list and the Puzzle scores tab. */
@@ -121,7 +125,8 @@ export interface ScoreTable {
   highestLevel: number;
 }
 
-export function titleScreen(prefs: Prefs, tables: Record<RunMode, ScoreTable>, puzzles: PuzzleSummary, daily: DailySummary): string {
+/** `canInstall`: the browser offers to install the game as an app (it isn't installed yet). */
+export function titleScreen(prefs: Prefs, tables: Record<RunMode, ScoreTable>, puzzles: PuzzleSummary, daily: DailySummary, canInstall: boolean): string {
   const selected = modeById(prefs.mode);
   const cards = GAME_MODES.map((m) => {
     const on = m.id === selected.id;
@@ -181,6 +186,7 @@ export function titleScreen(prefs: Prefs, tables: Record<RunMode, ScoreTable>, p
       <header class="topbar">
         <div class="brand">${logo}<div><h1>Atom Trap</h1><p class="tagline">A neon tribute to JezzBall (1992)</p></div></div>
         <nav class="topnav" aria-label="Menu">
+          ${canInstall ? button('install', `${icon.download}<span>Install app</span>`, 'nav') : ''}
           ${button('scores', `${icon.trophy}<span>High scores</span>`, 'nav')}
           ${button('settings', `${icon.sliders}<span>Settings</span>`, 'nav')}
         </nav>
@@ -198,6 +204,11 @@ export function titleScreen(prefs: Prefs, tables: Record<RunMode, ScoreTable>, p
 }
 
 const backButton = (action: string) => button(action, icon.back, 'icon', 'aria-label="Back"');
+
+/** A volume slider under its on/off switch (main.ts listens for `data-volume`). */
+function volume(which: 'music' | 'sfx', label: string, value: number): string {
+  return `<div class="volume"><input type="range" min="0" max="100" step="5" value="${Math.round(value * 100)}" data-volume="${which}" aria-label="${label}" /></div>`;
+}
 
 function toggle(action: string, label: string, hint: string, on: boolean): string {
   return `
@@ -285,10 +296,13 @@ export function settingsScreen(prefs: Prefs, hapticsSupported: boolean, back: 'm
         <section class="panel">
           <h2 class="section-label">Sound &amp; feel</h2>
           ${toggle('toggle-music', 'Music', 'Ambient synth soundtrack', prefs.music)}
+          ${prefs.music ? volume('music', 'Music volume', prefs.musicVolume) : ''}
           ${toggle('toggle-sfx', 'Sound effects', 'Walls, breaks and captures', prefs.sfx)}
+          ${prefs.sfx ? volume('sfx', 'Sound effects volume', prefs.sfxVolume) : ''}
           ${hapticsSupported ? toggle('toggle-haptics', 'Vibration', 'On touch devices', prefs.haptics) : ''}
+          ${toggle('toggle-motion', 'Reduce motion', 'No shake, demo or pop-in effects; softer flashes', prefs.reduceMotion)}
           ${updateRow(update)}
-          <div class="panel-foot">${button('show-hint', 'Show the first-play hint again', 'secondary small')}</div>
+          <div class="panel-foot">${button('show-hint', 'Show the tutorials again', 'secondary small')}</div>
         </section>
       </div>
     </div>`;
@@ -354,7 +368,7 @@ export function levelClearedScreen(c: ClearedInfo): string {
         ${row('Coverage bonus', c.bonus.coverage)}
         ${row('Lives bonus', c.bonus.lives)}
         ${row('Time bonus', c.bonus.time)}
-        <tr class="total"><td>${c.scored ? 'Run total' : 'Run total (unscored)'}</td><td>${fmt(c.total)}</td></tr>
+        <tr class="total"><td>${c.scored ? 'Run total' : 'Run total (unscored)'}</td><td data-count="${Math.round(c.total)}">${fmt(c.total)}</td></tr>
       </table>
       <div class="row">${button('next', `Next level${icon.next}`, 'primary big grow')}</div>
     </div>`;
@@ -604,5 +618,63 @@ export function dailyResultScreen(d: DailyEnd): string {
         ${d.scored ? button('daily-share', 'Share result', 'primary big grow') : button('daily-practice', `${icon.restart}Again`, 'primary big grow')}
       </div>
       ${d.scored ? button('daily-practice', 'Practice this board', 'ghost') : ''}
+    </div>`;
+}
+
+/** The modes that explain themselves the first time they're played. */
+export type IntroMode = 'puzzle' | 'daily' | 'arcade';
+
+/** Small animated pictures for the intros (the animation is CSS: `.intro-art` in style.css). */
+const INTRO_ART: Record<IntroMode, string> = {
+  // A wall closes a small pocket's gap, the atom inside implodes and the pocket fills.
+  arcade: `<svg viewBox="0 0 180 104" aria-hidden="true"><rect class="board edge" x="2" y="2" width="176" height="100" rx="3"/><path class="edge" d="M50 20H110V84H90M70 84H50Z"/><rect class="removed i-fill" x="52" y="22" width="56" height="60"/><line class="hot i-wall" x1="70" y1="84" x2="90" y2="84"/><circle class="atom i-atom" cx="80" cy="50" r="7"/><circle class="edge i-ring" cx="80" cy="50" r="16"/><circle class="atom" cx="150" cy="30" r="6"/></svg>`,
+  // Three walls go up one after another; fewer walls, more stars.
+  puzzle: `<svg viewBox="0 0 180 104" aria-hidden="true"><rect class="board edge" x="2" y="2" width="176" height="100" rx="3"/><rect class="removed" x="40" y="30" width="16" height="16"/><rect class="removed" x="124" y="58" width="16" height="16"/><line class="hot i-wall i-w1" x1="90" y1="2" x2="90" y2="102"/><line class="hot i-wall i-w2" x1="2" y1="52" x2="90" y2="52"/><line class="hot i-wall i-w3" x1="90" y1="70" x2="178" y2="70"/><circle class="atom" cx="140" cy="30" r="6"/><path class="bolt" d="M24 70l3 6 7 1-5 5 1 7-6-4-6 4 1-7-5-5 7-1z"/></svg>`,
+  // A calendar page with today's number, and a share arrow.
+  daily: `<svg viewBox="0 0 180 104" aria-hidden="true"><rect class="board edge" x="50" y="12" width="80" height="80" rx="8"/><line class="edge" x1="50" y1="32" x2="130" y2="32"/><line class="hot round" x1="68" y1="6" x2="68" y2="18"/><line class="hot round" x1="112" y1="6" x2="112" y2="18"/><circle class="atom" cx="76" cy="60" r="6"/><circle class="atom" cx="104" cy="72" r="6"/><path class="edge" d="M146 58l16-12-16-12M162 46h-14c-8 0-12 6-12 14"/></svg>`,
+};
+
+const INTROS: Record<IntroMode, { title: string; lines: string[] }> = {
+  arcade: {
+    title: 'Hunt the atoms',
+    lines: [
+      'Seal an atom into a pocket of 20 cells or fewer to capture it: 500 points and +5 seconds.',
+      'Catches within a few seconds of each other build a chain, up to ×8.',
+      'One clock for the whole run. Clearing a board adds time; capturing the last atom clears it too.',
+    ],
+  },
+  puzzle: {
+    title: 'Fewer walls, more stars',
+    lines: [
+      'Each puzzle starts the same way every time. No timer, three lives.',
+      'Any clear earns a star. Get near par for two, reach par for three.',
+      'Clear a puzzle to open the next one.',
+    ],
+  },
+  daily: {
+    title: 'One board a day',
+    lines: [
+      'Everyone gets the same board today. Clear it in as few walls as you can.',
+      'Your first try is the one that counts; after that you can practise.',
+      'Share your result, and play every day to keep your streak.',
+    ],
+  },
+};
+
+/** Explains a mode the first time it's played; its button starts the game. */
+export function introScreen(m: IntroMode): string {
+  const intro = INTROS[m];
+  return `
+    <div class="dialog intro" role="dialog" aria-labelledby="dlg-title">
+      <div class="dialog-head">
+        <p class="kicker">${modeById(m).name}</p>
+        <h2 id="dlg-title" class="glow">${intro.title}</h2>
+      </div>
+      <div class="intro-art ${m}">${INTRO_ART[m]}</div>
+      <ul class="intro-lines">${intro.lines.map((l) => `<li>${l}</li>`).join('')}</ul>
+      <div class="row">
+        ${button('menu', 'Back', 'secondary grow')}
+        ${button('intro-ok', `${icon.play}Let's play`, 'primary big grow')}
+      </div>
     </div>`;
 }
