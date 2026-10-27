@@ -1,11 +1,14 @@
 # Builds the Android app (ADR-0020): an app bundle (.aab) to upload to Google Play, and an APK to
-# install on a phone by hand. Run it from the Actions tab, or push a tag such as v1.0.0.
+# install on a phone by hand. Run it from the Actions tab, or push a tag such as v1.0.0. Pushes that
+# change the Android setup build it too, to catch breakage early.
 name: Android app
 
 on:
   workflow_dispatch:
   push:
     tags: ['v*']
+    branches: [main]
+    paths: ['android/**', 'capacitor.config.ts', '.github/workflows/android.yml']
 
 permissions:
   contents: read
