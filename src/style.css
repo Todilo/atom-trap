@@ -756,6 +756,12 @@ body {
   text-shadow: 0 0 16px var(--accent-soft);
 }
 
+/* "Neon" in the name: the second word, in the highlight colour. */
+#screen .neon {
+  color: var(--highlight);
+  text-shadow: 0 0 14px var(--highlight-soft);
+}
+
 #screen .tagline {
   margin-top: 3px;
   font-size: 13px;

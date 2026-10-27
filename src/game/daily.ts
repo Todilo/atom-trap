@@ -179,5 +179,5 @@ export const SHARE_URL = 'https://todilo.github.io/atom-trap/';
 export function shareText(key: string, result: DailyResult, streak: number): string {
   const stars = dailyStars(result);
   const outcome = result.cleared ? `${'★'.repeat(stars)}${'☆'.repeat(3 - stars)} · ${result.walls} walls (par ${result.par[0]})` : 'Not cleared';
-  return `Atom Trap Daily #${dayNumber(key)}\n${outcome}${streak > 1 ? `\nStreak ${streak}` : ''}\n${SHARE_URL}`;
+  return `Atom Trap: Neon Daily #${dayNumber(key)}\n${outcome}${streak > 1 ? `\nStreak ${streak}` : ''}\n${SHARE_URL}`;
 }

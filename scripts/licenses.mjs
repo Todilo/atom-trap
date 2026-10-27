@@ -27,6 +27,6 @@ const blocks = [...seen.values()]
     return `${head}\n\n${text ?? `Licensed under the ${pkg.license} license.`}`;
   });
 
-const intro = 'Atom Trap is built with the open-source software below. Thank you to its authors.';
+const intro = 'Atom Trap: Neon is built with the open-source software below. Thank you to its authors.';
 writeFileSync('public/licenses.txt', [intro, ...blocks].join(`\n\n${'='.repeat(72)}\n\n`) + '\n');
 console.log(`licenses.txt: ${blocks.length} packages`);

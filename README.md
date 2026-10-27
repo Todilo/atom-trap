@@ -1,4 +1,4 @@
-# Atom Trap
+# Atom Trap: Neon
 
 Trap bouncing atoms by building walls, clear 75% of the chamber, then move on to the next level. Atom Trap is an installable web game (PWA) built with TypeScript, Vite and PixiJS.
 

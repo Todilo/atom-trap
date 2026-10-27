@@ -11,9 +11,9 @@ export default defineConfig({
       registerType: 'prompt',
       includeAssets: ['icons/favicon.svg'],
       manifest: {
-        name: 'Atom Trap',
-        short_name: 'Atom Trap',
-        description: 'Atom Trap: build walls, trap bouncing atoms, clear the board.',
+        name: 'Atom Trap: Neon',
+        short_name: 'Atom Trap: Neon',
+        description: 'Atom Trap: Neon. Build walls, trap bouncing atoms, clear the board.',
         start_url: base,
         scope: base,
         display: 'fullscreen',

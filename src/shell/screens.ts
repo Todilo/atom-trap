@@ -116,7 +116,7 @@ function dailyOutcome(r: DailyResult): string {
 export function attractScreen(touch: boolean): string {
   return `
     <button type="button" class="attract" data-action="wake" aria-label="Show the menu">
-      <span class="attract-brand">${logo}<span class="attract-name">Atom Trap</span></span>
+      <span class="attract-brand">${logo}<span class="attract-name" aria-label="Atom Trap: Neon">Atom Trap <span class="neon">Neon</span></span></span>
       <span class="attract-cta">${touch ? 'Tap to play' : 'Click to play'}</span>
     </button>`;
 }
@@ -186,7 +186,7 @@ export function titleScreen(prefs: Prefs, tables: Record<RunMode, ScoreTable>, p
   return `
     <div class="page title">
       <header class="topbar">
-        <div class="brand">${logo}<div><h1>Atom Trap</h1><p class="tagline">Build walls. Trap atoms.</p></div></div>
+        <div class="brand">${logo}<div><h1 aria-label="Atom Trap: Neon">Atom Trap <span class="neon">Neon</span></h1><p class="tagline">Build walls. Trap atoms.</p></div></div>
         <nav class="topnav" aria-label="Menu">
           ${canInstall ? button('install', `${icon.download}<span>Install app</span>`, 'nav') : ''}
           ${button('achievements', `${icon.medal}<span>Achievements</span>`, 'nav')}

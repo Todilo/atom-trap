@@ -2,7 +2,7 @@
   "name": "atom-trap",
   "private": true,
   "version": "1.0.0",
-  "description": "Atom Trap: build walls, trap bouncing atoms, clear the board.",
+  "description": "Atom Trap: Neon. Build walls, trap bouncing atoms, clear the board.",
   "type": "module",
   "scripts": {
     "dev": "vite",

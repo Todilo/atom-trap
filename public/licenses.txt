@@ -1,4 +1,4 @@
-Atom Trap is built with the open-source software below. Thank you to its authors.
+Atom Trap: Neon is built with the open-source software below. Thank you to its authors.
 
 ========================================================================
 
