@@ -1807,3 +1807,41 @@ body {
     font-size: 15px;
   }
 }
+
+/* Chain pips: fills and captures towards the next multiplier. */
+#hud .pips {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+#hud .pips i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line);
+}
+
+#hud .pips i.on {
+  border-color: var(--highlight);
+  background: var(--highlight);
+}
+
+/* The score glows while it counts up to a new total. */
+#hud b.score.counting {
+  text-shadow: 0 0 10px var(--highlight-soft);
+}
+
+/* The board's points by source, in the Arcade banner. */
+#screen .banner-points {
+  display: flex;
+  gap: 14px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+#screen .banner-points b {
+  color: var(--text);
+  font-family: var(--display);
+}

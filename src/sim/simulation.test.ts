@@ -284,6 +284,33 @@ describe('Arcade rules (ADR-0018)', () => {
     expect(broken.chain).toBe(2);
   });
 
+  it('climbs one multiplier per two catches when the step is 2, and a break takes one step back', () => {
+    const sim = new Simulation(arcade({ chainStep: 2 }), { atoms: [{ x: 27, y: 10, dx: 1, dy: 1 }] });
+    sim.chain = 1;
+    sim.chainEndsAt = 99;
+    expect([sim.chainMultiplier, sim.chainProgress]).toEqual([1, 1]);
+    sim.chain = 2;
+    expect([sim.chainMultiplier, sim.chainProgress]).toEqual([1, 2]);
+    sim.chain = 3;
+    expect([sim.chainMultiplier, sim.chainProgress]).toEqual([2, 1]);
+
+    const broken = new Simulation(arcade({ chainStep: 2 }), { atoms: [{ x: 12, y: 3, dx: -1, dy: 1 }] });
+    broken.chain = 5;
+    broken.chainEndsAt = 99;
+    broken.placeWall(10, 5, 'vertical');
+    run(broken, 1);
+    expect(broken.chain).toBe(3);
+    expect(broken.chainMultiplier).toBe(2);
+  });
+
+  it('keeps the points from fills and from captures apart, for the board breakdown', () => {
+    const sim = new Simulation(row({ chainWindow: 0 }), { atoms: [{ x: 1, y: 0, dx: 1, dy: 1 }, { x: 6, y: 0, dx: 1, dy: 1 }] });
+    sim.placeWall(3, 0, 'vertical');
+    sim.step();
+    expect(sim.capturePointsEarned).toBe(100);
+    expect(sim.fillPoints).toBe(sim.score - 100);
+  });
+
   it("doesn't run the chain down while a wall is growing", () => {
     const sim = new Simulation(arcade({ chainWindow: 3 }), { atoms: [{ x: 27, y: 19, dx: 1, dy: 1 }] });
     sim.chain = 1;

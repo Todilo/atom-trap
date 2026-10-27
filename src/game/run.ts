@@ -31,16 +31,25 @@ export type RunMode = 'classic' | 'arcade';
  * and captures, and play against one clock for the whole run. Timer units: 10 a second.
  */
 export const ARCADE_TWEAKS: RuleTweaks = {
-  // About a 5 × 4 pocket. From the bot (October 2026): at 12, even a strong player rarely caught one.
-  captureSize: 20,
-  capturePoints: 1000,
-  captureTime: 50,
-  // A fill or capture within 6 seconds of the last one extends the chain (not counting while a wall grows).
-  chainWindow: 60,
-  chainMultipliers: [1, 2, 3, 4, 5, 6, 8],
-  bigCatchShare: 0.15,
+  // Round numbers, so a score reads at a glance: 10 a cell, a capture worth 50 cells.
+  pointsPerCell: 10,
+  capturePoints: 500,
+  livesBonusPerLife: 200,
+  coverageBonusTiers: [
+    { fromPercent: 80, pointsPerPercent: 50 },
+    { fromPercent: 90, pointsPerPercent: 100 },
+  ],
   // The time left carries on to the next board, so it isn't also paid out as points.
   timeBonusPerUnit: 0,
+  // About a 5 × 4 pocket. From the bot (October 2026): at 12, even a strong player rarely caught one.
+  captureSize: 20,
+  captureTime: 50,
+  // A fill or capture within 6 seconds of the last one extends the chain (not counting while a wall
+  // grows); two of them climb one multiplier.
+  chainWindow: 60,
+  chainMultipliers: [1, 2, 3, 4, 5, 6, 8],
+  chainStep: 2,
+  bigCatchShare: 0.15,
 };
 
 /**

@@ -62,6 +62,7 @@ const hud = {
   chain: $('hud-chain'),
   chainValue: $('hud-chain-value'),
   chainBar: $('hud-chain-bar'),
+  chainPips: $('hud-chain-pips'),
   unscored: $('hud-unscored'),
   time: $('hud-time'),
   timeBar: $('hud-time-bar'),
@@ -641,7 +642,10 @@ function handleStepEvents(s: Simulation): void {
       // Arcade keeps moving: a flash and the time gained, then the next board by itself.
       mode = 'cleared';
       renderer.flashBoard();
-      showScreen(arcadeClearedBanner(run.level, Math.round(run.clearTimeBonus / 10)), 'banner');
+      showScreen(
+        arcadeClearedBanner({ level: run.level, seconds: Math.round(run.clearTimeBonus / 10), fills: s.fillPoints, captures: s.capturePointsEarned, bonus: e.bonus.total }),
+        'banner',
+      );
       setTimeout(() => {
         if (mode === 'cleared' && run?.mode === 'arcade') nextLevel();
       }, 1500);
@@ -715,14 +719,16 @@ function drawDemo(deltaMS: number): void {
 let lastFill = { x: 0, y: 0 };
 function arcadeFeedback(s: Simulation, e: GameEvent): void {
   const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
+  // How much a catch matters: a thin wall (~100 points) is light, 5,000 points or more is the top.
+  const weight = (points: number) => Math.log10(Math.max(points, 100) / 100) / Math.log10(50);
   if (e.type === 'cells-removed') {
     lastFill = { x: e.x, y: e.y };
-    renderer.popup(`+${fmt(e.points)}${s.chainMultiplier > 1 ? ` ×${s.chainMultiplier}` : ''}`, e.x, e.y);
+    renderer.popup(`+${fmt(e.points)}${s.chainMultiplier > 1 ? ` ×${s.chainMultiplier}` : ''}`, e.x, e.y, weight(e.points));
   } else if (e.type === 'atom-captured') {
     renderer.implode(e.x, e.y);
-    renderer.popup(`Captured +${fmt(e.points)}`, e.x, e.y - 1, true);
+    renderer.popup(`Captured +${fmt(e.points)}`, e.x, e.y - 1, 1);
   } else if (e.type === 'big-catch') {
-    renderer.popup('Big catch ×2', lastFill.x, lastFill.y + 1.5, true);
+    renderer.popup('Big catch ×2', lastFill.x, lastFill.y + 1.5, 0.8);
     renderer.shake(0.3);
   }
 }
@@ -730,6 +736,7 @@ function arcadeFeedback(s: Simulation, e: GameEvent): void {
 /** Lives show as dots up to this many; above it, as a number. */
 const MAX_LIFE_DOTS = 8;
 let shownLives = '';
+let shownScore = 0;
 let shownStars = -1;
 
 function updateHud(): void {
@@ -761,10 +768,21 @@ function updateHud(): void {
     const active = s.chain > 0;
     const left = active ? (s.chainEndsAt - s.steps + 1 - accumulator / s.rules.stepMs) / s.rules.chainWindow : 0;
     hud.chainValue.textContent = `×${s.chainMultiplier}`;
+    // Pips: progress towards the next multiplier (all lit at the top).
+    const atTop = s.chainMultiplier === s.rules.chainMultipliers[s.rules.chainMultipliers.length - 1];
+    const lit = atTop ? s.rules.chainStep : s.chainProgress;
+    if (hud.chainPips.childElementCount !== s.rules.chainStep || hud.chainPips.dataset.lit !== String(lit)) {
+      hud.chainPips.dataset.lit = String(lit);
+      hud.chainPips.innerHTML = Array.from({ length: s.rules.chainStep }, (_, i) => `<i${i < lit ? ' class="on"' : ''}></i>`).join('');
+    }
     hud.chainBar.style.width = `${Math.max(0, Math.min(1, left)) * 100}%`;
     hud.chain.classList.toggle('on', active);
   }
-  hud.score.textContent = puzzle ? String(s?.wallsPlaced ?? 0) : Math.round(run?.score ?? 0).toLocaleString('en-US');
+  // The score counts up to its new value, so each catch visibly adds to it.
+  const score = run?.score ?? 0;
+  shownScore = Math.abs(score - shownScore) < 1 || score < shownScore ? score : shownScore + (score - shownScore) * 0.15;
+  hud.score.textContent = puzzle ? String(s?.wallsPlaced ?? 0) : Math.round(shownScore).toLocaleString('en-US');
+  hud.score.classList.toggle('counting', score - shownScore >= 1);
   const reachable = puzzle && s ? starsFor(puzzle.def, s.wallsPlaced) : -1;
   if (reachable !== shownStars) {
     shownStars = reachable;

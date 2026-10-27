@@ -18,16 +18,21 @@ A first version added combos, a big-catch bonus and power-up tiles that appeared
 
 Arcade makes the game's name literal: **you trap the atoms themselves**, against one clock, in chains.
 
-- **Capture.** Sealing an atom into a pocket of at most 20 cells (about 5 × 4) captures it: the pocket fills, the atom is gone for the rest of the board, and it scores 1,000 points (before speed and chain) and adds 5 seconds. Capturing the last atom also clears the board. It's a direct goal with risk, because walls have to go close to atoms. The size came from the bot: at 12 cells even a strong player rarely caught one.
+- **Capture.** Sealing an atom into a pocket of at most 20 cells (about 5 × 4) captures it: the pocket fills, the atom is gone for the rest of the board, and it scores 500 points (before the chain) and adds 5 seconds. Capturing the last atom also clears the board. It's a direct goal with risk, because walls have to go close to atoms. The size came from the bot: at 12 cells even a strong player rarely caught one.
 - **One run clock.** A run starts with 90 seconds. Each board's time left carries over, plus 15 seconds for the clear and 1 second for each percent above the target. Time left is not also paid out as points. The next board starts after a 1.5-second banner. The run ends when the time or the lives run out.
-- **Chain.** A fill or capture within 6 seconds of the last one extends the chain, and points are multiplied by ×1, ×2, ×3, … up to ×8. The window only runs down while the player is choosing the next wall, not while one is growing. A broken wall drops the chain one step. The HUD shows it as a big multiplier with a draining bar, and each step up plays a higher note.
+- **Chain.** A fill or capture within 6 seconds of the last one extends the chain. Every two of them climb one multiplier: ×1, ×2, ×3, … up to ×8. One per catch climbed too fast. The window only runs down while the player is choosing the next wall, not while one is growing. A broken wall takes one multiplier back. The HUD shows a big multiplier, pips for progress to the next one and a draining bar, and each catch plays a higher note.
+- **Scores you can read.** Classic's original scoring (atoms + 5 points a cell) gave odd numbers whose weight was hard to judge. Arcade uses round ones instead:
+  - **Points:** 10 a cell, 500 a capture (worth 50 cells), 200 a life left at a clear, and a coverage bonus above 80%.
+  - **Floating points:** the bigger the points, the bigger the text, turning to the highlight colour.
+  - **The score:** counts up to its new total.
+  - **The board-clear banner:** breaks the board's points into fills, captures and bonus.
 - **A gentler climb than Classic.** One more atom every two boards (2, 2, 3, 3, … up to 12), and two more lives than atoms on each board.
   - In bot runs, a strong player's typical run went from board 14 to board 34.
   - A weaker player, who used to lose the first board, typically reached board 3.
   - The weaker player was losing on lives, never on time. A longer starting clock changed nothing; extra lives did.
 - **Big catch.** A single fill of at least 15% of the board scores double.
-- **Feedback.** Points rise from where cells filled, a capture implodes into a closing ring with sparks and a small screen shake, and a board clear flashes.
-- Arcade plays at Fast, with its own high scores and highest level. The rules are data on the ruleset (`captureSize`, `capturePoints`, `captureTime`, `chainWindow`, `chainMultipliers`, `bigCatchShare`), and Classic's values switch them all off.
+- **Feedback.** Points rise from where cells filled, sized by their weight, a capture implodes into a closing ring with sparks and a small screen shake, and a board clear flashes.
+- Arcade plays at Fast, with its own high scores and highest level. The rules are data on the ruleset (`captureSize`, `capturePoints`, `captureTime`, `chainWindow`, `chainMultipliers`, `chainStep`, `bigCatchShare`, plus its own `pointsPerCell` and bonuses), and Classic's values switch them all off.
 
 **Planned next**, once the core loop is confirmed fun:
 

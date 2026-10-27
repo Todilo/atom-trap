@@ -396,24 +396,29 @@ export class NeonRenderer {
     });
   }
 
-  /** Arcade: points (or a word) rising from a cell and fading out; `big` for captures and big catches. */
-  popup(text: string, cellX: number, cellY: number, big = false): void {
+  /**
+   * Arcade: points (or a word) rising from a cell and fading out. `weight` (0 to 1) says how much it
+   * matters: weightier popups are bigger, stay longer and turn from the wall colour to the highlight,
+   * so a great catch stands out from an ordinary one without reading the number.
+   */
+  popup(text: string, cellX: number, cellY: number, weight = 0): void {
     const l = this.layout;
     if (!l) return;
     const unit = Math.min(l.cellW, l.cellH);
+    const w = Math.max(0, Math.min(1, weight));
     const t = new Text({
       text,
       style: {
         fontFamily: "'Chakra Petch', system-ui, sans-serif",
         fontWeight: '700',
-        fontSize: Math.round(unit * (big ? 1.3 : 0.9)),
-        fill: big ? this.theme.hot : this.theme.wall,
+        fontSize: Math.round(unit * (0.75 + w)),
+        fill: w >= 0.6 ? parseInt(this.theme.ui.highlight.slice(1), 16) : this.theme.wall,
         stroke: { color: this.theme.background, width: Math.max(2, unit * 0.12) },
       },
     });
     t.anchor.set(0.5);
     this.fxLayer.addChild(t);
-    this.popups.push({ text: t, x: l.x + (cellX + 0.5) * l.cellW, y: l.y + (cellY + 0.5) * l.cellH, t0: performance.now(), dur: big ? 1300 : 900 });
+    this.popups.push({ text: t, x: l.x + (cellX + 0.5) * l.cellW, y: l.y + (cellY + 0.5) * l.cellH, t0: performance.now(), dur: 850 + w * 650 });
   }
 
   /** Arcade: a captured atom implodes: a ring closing in on it, sparks, and a shake. */

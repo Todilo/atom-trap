@@ -36,6 +36,8 @@ export interface Ruleset {
    */
   chainWindow: number;
   chainMultipliers: number[];
+  /** Fills and captures it takes to climb one chain multiplier (and what a break takes back). */
+  chainStep: number;
   /** Arcade: an atom sealed into a pocket of at most this many cells is captured; 0 means never. */
   captureSize: number;
   /** Points for each captured atom (before speed and chain), and timer units it adds. */
@@ -80,6 +82,7 @@ export function classicRuleset(level: number, speed: ClassicSpeed = 'fast'): Rul
     bigCatchShare: 0,
     chainWindow: 0,
     chainMultipliers: [1],
+    chainStep: 1,
     captureSize: 0,
     capturePoints: 0,
     captureTime: 0,

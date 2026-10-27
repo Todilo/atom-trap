@@ -556,13 +556,24 @@ export function puzzleFailedScreen(reason: 'lives' | 'time' | 'walls', index: nu
     </div>`;
 }
 
-/** Arcade's quick note between boards (it moves on by itself): the time the clear added. */
-export function arcadeClearedBanner(level: number, seconds: number): string {
+/** What a cleared Arcade board earned: the time added and where its points came from. */
+export interface ArcadeClear {
+  level: number;
+  seconds: number;
+  fills: number;
+  captures: number;
+  bonus: number;
+}
+
+/** Arcade's quick note between boards (it moves on by itself). */
+export function arcadeClearedBanner(c: ArcadeClear): string {
+  const part = (label: string, n: number) => (n > 0 ? `<span><b>${fmt(n)}</b> ${label}</span>` : '');
   return `
     <div class="banner-card" role="status">
-      <p class="kicker">Level ${level} cleared</p>
-      <p class="banner-time">+${seconds} s</p>
-      <p class="sub">Level ${level + 1} next</p>
+      <p class="kicker">Level ${c.level} cleared</p>
+      <p class="banner-time">+${c.seconds} s</p>
+      <p class="banner-points">${part('fills', c.fills)}${part('captures', c.captures)}${part('bonus', c.bonus)}</p>
+      <p class="sub">Level ${c.level + 1} next</p>
     </div>`;
 }
 

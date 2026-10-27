@@ -109,5 +109,8 @@ describe('Slow speed and names', () => {
     const run = new Run('scored', new Progress(memoryStore(), 'arcade'));
     expect(run.sim.atoms).toHaveLength(2);
     expect(run.sim.lives).toBe(4);
+    // Round scoring: 10 a cell and 500 a capture, whatever the level.
+    expect(run.sim.rules.pointsPerCell).toBe(10);
+    expect(run.sim.rules.capturePoints).toBe(500);
   });
 });

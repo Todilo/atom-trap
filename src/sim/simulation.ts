@@ -77,6 +77,9 @@ export class Simulation {
   chain = 0;
   /** The step the chain ends at unless something fills first. */
   chainEndsAt = 0;
+  /** Points from fills and from captures on this level, for the board's breakdown. */
+  fillPoints = 0;
+  capturePointsEarned = 0;
 
   private readonly grid: Uint8Array;
   /** Index of the atom in each cell, or -1. Atoms never share a cell. */
@@ -139,7 +142,12 @@ export class Simulation {
   /** The multiplier points get from the chain now (Arcade). */
   get chainMultiplier(): number {
     const m = this.rules.chainMultipliers;
-    return this.chain === 0 ? 1 : m[Math.min(this.chain - 1, m.length - 1)];
+    return this.chain === 0 ? 1 : m[Math.min(Math.floor((this.chain - 1) / this.rules.chainStep), m.length - 1)];
+  }
+
+  /** How many of the fills and captures needed for the next multiplier are done (1 to `chainStep`). */
+  get chainProgress(): number {
+    return this.chain === 0 ? 0 : ((this.chain - 1) % this.rules.chainStep) + 1;
   }
 
   /** Atoms still on the board (Arcade captures take them off). */
@@ -242,6 +250,7 @@ export class Simulation {
       for (const a of pocket.atoms) {
         const points = this.rules.capturePoints * this.rules.scoreScale * this.chainMultiplier;
         this.score += points;
+        this.capturePointsEarned += points;
         if (this.rules.timeLimit) this.timeLeft += this.rules.captureTime;
         events.push({ type: 'atom-captured', x: a.x, y: a.y, points });
       }
@@ -327,6 +336,7 @@ export class Simulation {
     this.removedCells += count;
     const points = count * this.rules.pointsPerCell * this.rules.scoreScale * multiplier;
     this.score += points;
+    this.fillPoints += points;
     const { cols } = this.rules;
     const x = cells.reduce((t, i) => t + (i % cols), 0) / count;
     const y = cells.reduce((t, i) => t + Math.floor(i / cols), 0) / count;
@@ -394,7 +404,7 @@ export class Simulation {
     this.halves[slot] = null;
     for (const c of half.cells) this.grid[this.idx(c.x, c.y)] = CELL_OPEN;
     // A break costs the chain one step, not all of it.
-    this.chain = Math.max(0, this.chain - 1);
+    this.chain = Math.max(0, this.chain - this.rules.chainStep);
     this.lives = Math.max(0, this.lives - 1);
     events.push({ type: 'wall-broken', slot }, { type: 'life-lost', livesLeft: this.lives });
     if (this.lives === 0 && this.status === 'playing') {
