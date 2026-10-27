@@ -112,6 +112,12 @@ export class AudioEngine {
     if (this.ctx) this.sfxBus.gain.setTargetAtTime(SFX_LEVEL * v, this.ctx.currentTime, 0.05);
   }
 
+  /** A bright little fanfare for an unlocked achievement. */
+  chime(): void {
+    if (!this.ctx || !this.settings.sfx) return;
+    [79, 83, 86, 91].forEach((n, i) => this.tone({ freq: midi(n), dur: 0.3, type: 'triangle', vol: 0.09, delay: i * 0.08 }));
+  }
+
   /** Hum while wall halves grow; pitch rises with the wall's length. 0 = silent. */
   setGrowing(length: number): void {
     const ctx = this.ctx;

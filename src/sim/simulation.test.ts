@@ -187,6 +187,20 @@ describe('Walls and filling', () => {
     expect(twin.removedCells).toBe(sim.removedCells);
   });
 
+  it('knows an atom is stuck for good once all four diagonal cells are filled', () => {
+    // A one-cell-wide corridor (row 1 of a 3-row board): long, but an atom in it can never move.
+    const filled = new Uint8Array(8 * 3);
+    for (let x = 0; x < 8; x++) filled[x] = filled[16 + x] = 1;
+    const corridor = new Simulation(rules({ cols: 8, rows: 3 }), { atoms: [{ x: 3, y: 1, dx: 1, dy: 1 }], filled });
+    expect(corridor.atomStuck(0)).toBe(true);
+    const before = { ...corridor.atoms[0] };
+    run(corridor, 10);
+    expect(corridor.atoms[0]).toMatchObject({ x: before.x, y: before.y });
+
+    const free = new Simulation(level1, { atoms: [{ x: 10, y: 10, dx: 1, dy: 1 }] });
+    expect(free.atomStuck(0)).toBe(false);
+  });
+
   it('does not fill a region that still holds an atom', () => {
     const sim = new Simulation(rules({ cols: 8, rows: 1 }), { atoms: [{ x: 0, y: 0, dx: 1, dy: 1 }] });
     sim.placeWall(4, 0, 'vertical');

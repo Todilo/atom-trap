@@ -2,132 +2,67 @@ import '@fontsource/chakra-petch/latin-500.css';
 import '@fontsource/chakra-petch/latin-600.css';
 import '@fontsource/chakra-petch/latin-700.css';
 import './style.css';
-import { registerSW } from 'virtual:pwa-register';
+import { dailyBoard, dayKey, dayNumber, shareText } from './game/daily';
 import { PointerInput } from './game/input';
 import { layoutBoard, wallOriginAt } from './game/layout';
-import { Progress, Run, type RunKind, type RunMode } from './game/run';
-import { NeonRenderer, snapshot, type Snapshot } from './render/neonRenderer';
 import { modeById, type GameModeId } from './game/modes';
-import { BotPlayer } from './game/bot';
-import { DailyProgress, dailyBoard, dailyPar, dayKey, dayNumber, shareText } from './game/daily';
-import { MAX_STARS, PUZZLES, PuzzleProgress, startPuzzle, starsFor, type Puzzle } from './game/puzzles';
+import { PUZZLES, startPuzzle, starsFor, type Puzzle } from './game/puzzles';
+import { Run, type RunKind, type RunMode } from './game/run';
 import { AtomPreview } from './render/atomPreview';
-import { createLevel } from './sim/levels';
-import { LAYOUTS } from './sim/layouts';
+import { NeonRenderer, snapshot, type Snapshot } from './render/neonRenderer';
 import { ATOM_STYLES, atomStyleById, cssVariables, themeById, type AtomStyle, type Theme } from './render/themes';
 import { AudioEngine, type AudioSettings } from './shell/audio';
+import { Demo } from './shell/demo';
+import { ArcadeFeedback, countUp } from './shell/feedback';
 import { Haptics } from './shell/haptics';
+import { Hud } from './shell/hud';
+import { Install } from './shell/install';
+import { listenToKeys } from './shell/keyboard';
+import type { PuzzlePlay, ShellMode } from './shell/play';
+import { logPuzzleAttempt, printPuzzleLog } from './shell/puzzleLog';
+import { Records } from './shell/records';
 import {
-  gameOverScreen,
-  highScoresScreen,
-  levelClearedScreen,
-  pauseScreen,
-  introScreen,
-  type IntroMode,
+  achievementsScreen,
   arcadeClearedBanner,
+  ATOM_PAGE_SIZE,
   attractScreen,
   dailyResultScreen,
+  gameOverScreen,
+  highScoresScreen,
+  introScreen,
+  levelClearedScreen,
+  pauseScreen,
   puzzleClearedScreen,
   puzzleFailedScreen,
   puzzlesScreen,
-  ATOM_PAGE_SIZE,
   settingsScreen,
   titleScreen,
+  type IntroMode,
   type Prefs,
-  type PuzzleSummary,
-  type DailySummary,
 } from './shell/screens';
+import type { Achievement } from './game/achievements';
 import { localStore } from './shell/storage';
+import { Updates } from './shell/updates';
+import { LAYOUTS } from './sim/layouts';
+import { createLevel } from './sim/levels';
 import type { ClassicSpeed } from './sim/ruleset';
 import type { GameEvent, Simulation } from './sim/simulation';
 
-// Classic (ADR-0010) and Puzzle modes with the neon look (ADR-0004) and synth audio (ADR-0008).
+/*
+ * The shell: menus and screens, starting and ending games in each mode (ADR-0014), and the frame
+ * loop that steps the simulation (ADR-0005) and draws it (ADR-0004). The parts with a job of their
+ * own live in src/shell/: the HUD, records, updates, install, the demo, feedback and keys.
+ */
 
 // Best effort only: browsers allow the orientation lock just in fullscreen / installed mode.
 const orientation = screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> };
 orientation.lock?.('landscape').catch(() => {});
 
-const $ = (id: string) => document.getElementById(id)!;
-const hud = {
-  mode: $('hud-mode'),
-  level: $('hud-level'),
-  lives: $('hud-lives'),
-  dots: $('hud-dots'),
-  coverage: $('hud-coverage'),
-  coverageBar: $('hud-coverage-bar'),
-  target: $('hud-target'),
-  targetMark: $('hud-target-mark'),
-  score: $('hud-score'),
-  scoreLabel: $('hud-score-label'),
-  stars: $('hud-stars'),
-  timeChip: $('hud-time-chip'),
-  chain: $('hud-chain'),
-  chainValue: $('hud-chain-value'),
-  chainBar: $('hud-chain-bar'),
-  chainPips: $('hud-chain-pips'),
-  unscored: $('hud-unscored'),
-  time: $('hud-time'),
-  timeBar: $('hud-time-bar'),
-  pause: $('hud-pause'),
-};
-const screenEl = $('screen');
-const hudEl = $('hud');
-const host = $('app');
-const progress = new Progress(localStore);
-const arcadeProgress = new Progress(localStore, 'arcade');
-const progressFor = (m: RunMode) => (m === 'arcade' ? arcadeProgress : progress);
-const scoreTables = () => ({
-  classic: { scores: progress.highScores, highestLevel: progress.highestLevel },
-  arcade: { scores: arcadeProgress.highScores, highestLevel: arcadeProgress.highestLevel },
-});
-const puzzleProgress = new PuzzleProgress(localStore);
-const dailyProgress = new DailyProgress(localStore);
+const screenEl = document.getElementById('screen')!;
+const host = document.getElementById('app')!;
 
-/** Today's par, worked out once per day and device by the bot (src/game/daily.ts). */
-let dailyParFor: { key: string; par: Promise<[number, number]> } | null = null;
-let dailyParReady: { key: string; par: [number, number] } | null = null;
+// ---- Look, sound and preferences ----
 
-function ensureDailyPar(key: string): void {
-  const cached = dailyProgress.cachedPar(key);
-  if (cached) {
-    dailyParReady = { key, par: cached };
-    return;
-  }
-  if (dailyParFor?.key === key) return;
-  const par = dailyPar(dailyBoard(key));
-  dailyParFor = { key, par };
-  void par.then((p) => {
-    dailyProgress.cachePar(key, p);
-    dailyParReady = { key, par: p };
-    // The title waits for it: redraw if it's still showing.
-    if (screenEl.querySelector('.page.title')) redraw?.();
-  });
-}
-
-function dailySummary(): DailySummary {
-  const key = dayKey(new Date());
-  ensureDailyPar(key);
-  return {
-    key,
-    number: dayNumber(key),
-    par: dailyParReady?.key === key ? dailyParReady.par : null,
-    result: dailyProgress.result(key),
-    streak: dailyProgress.streak(key),
-    history: dailyProgress.history(),
-  };
-}
-
-function puzzleSummary(): PuzzleSummary {
-  const stars = puzzleProgress.stars;
-  return {
-    stars,
-    bestWalls: puzzleProgress.bestWalls,
-    unlocked: PUZZLES.map((_, i) => puzzleProgress.unlocked(i)),
-    total: puzzleProgress.totalStars,
-    max: MAX_STARS,
-    suggested: puzzleProgress.suggested,
-  };
-}
 let theme = themeById(localStore.get('theme', 'neon'));
 let atomStyle: AtomStyle = atomStyleById(localStore.get('atomStyle', 'soft'));
 const renderer = await NeonRenderer.create(host, theme);
@@ -141,8 +76,12 @@ function applyTheme(t: Theme): void {
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', cssVariables(t)['--bg']);
 }
 applyTheme(theme);
+
 const audio = new AudioEngine({ music: true, sfx: true, musicVolume: 1, sfxVolume: 1, ...localStore.get<Partial<AudioSettings>>('audio', {}) });
 const saveAudio = () => localStore.set('audio', audio.settings);
+// Audio unlock: browsers only allow sound after a user gesture, so start it on the first tap or click.
+window.addEventListener('pointerdown', () => audio.unlock(), { capture: true });
+
 const prefsStore = {
   haptics: true,
   speed: 'fast' as ClassicSpeed,
@@ -164,6 +103,7 @@ const prefs = (): Prefs => ({
   reduceMotion: prefsStore.reduceMotion,
 });
 const motionReduced = () => prefsStore.reduceMotion;
+
 /** Applies Reduce motion to the effects and to the page's CSS animations. */
 function applyMotion(): void {
   renderer.setReducedMotion(prefsStore.reduceMotion);
@@ -171,45 +111,60 @@ function applyMotion(): void {
 }
 applyMotion();
 
-// Audio unlock: browsers only allow sound after a user gesture, so start it on the first tap or click.
-window.addEventListener('pointerdown', () => audio.unlock(), { capture: true });
+// ---- State ----
 
-/**
- * Shell states: `menu` (title / high scores, board idle behind), `playing`, `paused`,
- * `cleared` (level-clear screen), `over` (game-over screen).
- */
-type Mode = 'menu' | 'playing' | 'paused' | 'cleared' | 'over';
-let mode: Mode = 'menu';
-/** The Classic run in progress, if any; at most one of `run` and `puzzle` is set. */
+let mode: ShellMode = 'menu';
+/** The Classic or Arcade run in progress, if any; at most one of `run` and `puzzle` is set. */
 let run: Run | null = null;
-/**
- * The puzzle-style game in progress, if any: a Puzzle (`index` into PUZZLES) or a Daily board
- * (`daily`, scored or practice). Both play the same way.
- */
-let puzzle: { def: Puzzle; index: number | null; daily: { key: string; scored: boolean } | null; sim: Simulation } | null = null;
+let puzzle: PuzzlePlay | null = null;
+/** The game being played (the attract demo is separate). */
+const sim = (): Simulation | null => run?.sim ?? puzzle?.sim ?? null;
+/** The simulation before its latest step, for drawing smoothly between steps. */
+let previous: Snapshot = { atoms: [], halves: { a: null, b: null } };
+let accumulator = 0;
+/** The game-over screen's state, so it can be redrawn after the name is saved. */
+let gameOver: { reason: 'lives' | 'time' | 'walls'; rank: number | null; savedName: string | null } | null = null;
 
-/**
- * The demo on the attract screen: the bot (src/game/bot.ts) plays a Classic board, sometimes on a
- * layout, like the original's demo. The game opens on it and returns to it after the title sits idle.
- * Silent, and off for reduced motion (the game then opens on the menu).
- */
-let demo: { sim: Simulation; bot: BotPlayer; endedAt: number | null } | null = null;
-/** A lighter bot than the tuner's, so its look-ahead never makes a frame stutter on a phone. */
-const DEMO_BOT = { candidates: 10, sloppiness: 0.3 };
+const records = new Records(localStore, () => redrawTitle());
+const hud = new Hud();
+const updates = new Updates(document.getElementById('update')!, () => redraw?.());
+const installer = new Install(() => redrawTitle());
+const arcadeFeedback = new ArcadeFeedback(renderer);
 
-function newDemo(): void {
-  const seed = (Math.random() * 0xffffffff) >>> 0;
-  // Half the demos show off a layout.
-  const layout = Math.random() < 0.5 ? LAYOUTS[Math.floor(Math.random() * LAYOUTS.length)].id : undefined;
-  const sim = createLevel({ level: 2 + Math.floor(Math.random() * 3), layout, seed });
-  demo = { sim, bot: new BotPlayer(seed, DEMO_BOT), endedAt: null };
-  previous = snapshot(sim);
-  accumulator = 0;
+// ---- Screens ----
+
+/** Redraws the screen on show, for switches and tabs that change it in place. */
+let redraw: (() => void) | null = null;
+const redrawTitle = () => screenEl.querySelector('.page.title') && redraw?.();
+
+/** A page covers the whole stage; a dialog sits over the dimmed board. */
+function showScreen(html: string | null, kind: 'page' | 'dialog' | 'attract-screen' | 'banner' = 'dialog', draw: (() => void) | null = null): void {
+  // Redrawing the same screen (a switch flipped) keeps its scroll position.
+  const scroll = draw && draw === redraw ? screenEl.scrollTop : 0;
+  redraw = draw;
+  screenEl.hidden = html === null;
+  screenEl.className = kind;
+  screenEl.innerHTML = html ?? '';
+  screenEl.scrollTop = scroll;
 }
 
-/** Whether the demo should run now: on the attract screen. */
-const demoShowing = () => mode === 'menu' && !run && !puzzle && screenEl.classList.contains('attract-screen');
+const hintEl = document.getElementById('hint')!;
+const coarsePointer = window.matchMedia('(pointer: coarse)').matches;
+hintEl.classList.add(coarsePointer ? 'touch' : 'mouse');
+document.getElementById('hint-text')!.innerHTML = coarsePointer
+  ? 'Touch where a wall should start, then swipe:<br>sideways for horizontal, up or down for vertical.<br><small>The atoms wait for your first wall.</small>'
+  : 'Click to build a wall. Right-click turns it<br>between vertical and horizontal.<br><small>The atoms wait for your first wall.</small>';
+/** While the first-play hint shows, the level waits for the player's first wall. */
+let hintActive = false;
 
+function setHint(show: boolean): void {
+  hintActive = show;
+  hintEl.hidden = !show;
+}
+
+/** The attract demo, while the attract screen shows (ADR-0017). */
+let demo: Demo | null = null;
+const demoShowing = () => mode === 'menu' && !run && !puzzle && screenEl.classList.contains('attract-screen');
 /** Back to the demo after this long on the title screen without any input. */
 const ATTRACT_AFTER_MS = 20_000;
 let lastInput = performance.now();
@@ -225,96 +180,21 @@ function showAttract(): void {
   showScreen(attractScreen(coarsePointer), 'attract-screen');
 }
 
-// Any key on the attract screen brings up the menu, like a tap.
-window.addEventListener('keydown', () => {
-  if (demoShowing()) showMenu();
-});
-/** The simulation before its latest step, for drawing smoothly between steps. */
-let previous: Snapshot = { atoms: [], halves: { a: null, b: null } };
-let accumulator = 0;
-/** While the first-play hint shows, the level waits for the player's first wall. */
-let hintActive = false;
-/** The game-over screen's state, so it can be redrawn after the name is saved. */
-let gameOver: { reason: 'lives' | 'time' | 'walls'; rank: number | null; savedName: string | null } | null = null;
-
-const hintEl = $('hint');
-const coarsePointer = window.matchMedia('(pointer: coarse)').matches;
-hintEl.classList.add(coarsePointer ? 'touch' : 'mouse');
-$('hint-text').innerHTML = coarsePointer
-  ? 'Touch where a wall should start, then swipe:<br>sideways for horizontal, up or down for vertical.<br><small>The atoms wait for your first wall.</small>'
-  : 'Click to build a wall. Right-click turns it<br>between vertical and horizontal.<br><small>The atoms wait for your first wall.</small>';
-
-function setHint(show: boolean): void {
-  hintActive = show;
-  hintEl.hidden = !show;
-}
-
-/** The game being played; the title demo is drawn separately. */
-const sim = (): Simulation | null => run?.sim ?? puzzle?.sim ?? null;
-
-/** Redraws the screen on show, for switches and tabs that change it in place. */
-let redraw: (() => void) | null = null;
-
-/** A page covers the whole stage; a dialog sits over the dimmed board. */
-function showScreen(html: string | null, kind: 'page' | 'dialog' | 'attract-screen' | 'banner' = 'dialog', draw: (() => void) | null = null): void {
-  // Redrawing the same screen (a switch flipped) keeps its scroll position.
-  const scroll = draw && draw === redraw ? screenEl.scrollTop : 0;
-  redraw = draw;
-  screenEl.hidden = html === null;
-  screenEl.className = kind;
-  screenEl.innerHTML = html ?? '';
-  screenEl.scrollTop = scroll;
-}
-
-/**
- * Asks the server for a new version. A phone keeps the game open for days, and switching back to it
- * doesn't reload the page, so this also runs on resume and on the title screen, at most once a minute.
- * Resolves once a new version has had time to download; `updateReady` then says whether one did.
- */
-let lastUpdateCheck = 0;
-async function checkForUpdate(force = false): Promise<void> {
-  if (!swRegistration || (!force && Date.now() - lastUpdateCheck < 60_000)) return;
-  lastUpdateCheck = Date.now();
-  await swRegistration.update();
-  const installing = swRegistration.installing;
-  if (installing) {
-    await new Promise<void>((resolve) => {
-      const done = () => installing.state !== 'installing' && resolve();
-      installing.addEventListener('statechange', done);
-      setTimeout(resolve, 20_000);
-    });
-    // The page hears about the waiting version just after it installs.
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-}
-
-/** The Settings row's state while the player checks for updates by hand. */
-let updateCheck: 'idle' | 'checking' | 'latest' | 'failed' = 'idle';
-
-async function checkForUpdateNow(): Promise<void> {
-  updateCheck = 'checking';
-  redrawSettings();
-  try {
-    await checkForUpdate(true);
-    updateCheck = 'latest';
-  } catch {
-    updateCheck = 'failed';
-  }
-  redrawSettings();
-}
-
 function showMenu(): void {
   mode = 'menu';
   setHint(false);
-  void checkForUpdate().catch(() => {});
-  const draw = () =>
-    showScreen(titleScreen(prefs(), scoreTables(), puzzleSummary(), dailySummary(), installOffer !== null), 'page', draw);
+  void updates.check().catch(() => {});
+  const draw = () => showScreen(titleScreen(prefs(), records.scoreTables(), records.puzzleSummary(), records.dailySummary(), installer.available), 'page', draw);
   draw();
 }
 
 function showScores(tab: GameModeId): void {
-  const draw = () => showScreen(highScoresScreen(scoreTables(), tab, puzzleSummary(), dailySummary()), 'page', draw);
+  const draw = () => showScreen(highScoresScreen(records.scoreTables(), tab, records.puzzleSummary(), records.dailySummary()), 'page', draw);
   draw();
+}
+
+function showAchievements(): void {
+  showScreen(achievementsScreen(records.achievements.list(records.achievementView())), 'page');
 }
 
 function showPuzzles(): void {
@@ -322,7 +202,7 @@ function showPuzzles(): void {
   run = null;
   puzzle = null;
   setHint(false);
-  showScreen(puzzlesScreen(puzzleSummary()), 'page');
+  showScreen(puzzlesScreen(records.puzzleSummary()), 'page');
 }
 
 /** Which page of atom styles Settings shows; it opens on the page holding the current style. */
@@ -335,10 +215,7 @@ function showSettings(): void {
   const from = mode === 'paused' ? 'pause' : 'menu';
   atomPage = Math.floor(ATOM_STYLES.findIndex((s) => s.id === atomStyle) / ATOM_PAGE_SIZE);
   const draw = () => {
-    const update = {
-      version: import.meta.env.VITE_APP_VERSION ?? 'local build',
-      status: !swRegistration ? ('unavailable' as const) : updateReady ? ('ready' as const) : updateCheck,
-    };
+    const update = { version: import.meta.env.VITE_APP_VERSION ?? 'local build', status: updates.status };
     showScreen(settingsScreen(prefs(), haptics.supported, from, atomPage, update), 'page', draw);
     void showAtomPreviews();
   };
@@ -385,40 +262,28 @@ function showPause(): void {
   draw();
 }
 
-/**
- * The browser's offer to install the game as an app (Chrome, Edge, Android), kept for the title's
- * Install button: many phone players never find "Add to home screen" in the browser menu.
- */
-type InstallOffer = Event & { prompt(): Promise<void>; userChoice: Promise<unknown> };
-let installOffer: InstallOffer | null = null;
-const redrawTitle = () => screenEl.querySelector('.page.title') && redraw?.();
-window.addEventListener('beforeinstallprompt', (e) => {
-  e.preventDefault();
-  installOffer = e as InstallOffer;
-  redrawTitle();
-});
-window.addEventListener('appinstalled', () => {
-  installOffer = null;
-  redrawTitle();
-});
-
-async function install(): Promise<void> {
-  const offer = installOffer;
-  if (!offer) return;
-  await offer.prompt();
-  await offer.userChoice;
-  // An offer can only be used once; the browser sends a new one if it still applies.
-  installOffer = null;
-  redrawTitle();
+function showGameOver(): void {
+  const g = gameOver!;
+  showScreen(gameOverScreen(g.reason, run!.score, run!.level, run!.kind === 'scored', g.rank, records.classic.playerName, g.savedName));
 }
+
+function saveName(): void {
+  if (!gameOver?.rank) return;
+  const value = (document.getElementById('name-input') as HTMLInputElement | null)?.value ?? '';
+  const table = records.progressFor(run!.mode);
+  table.nameScore(gameOver.rank, value);
+  gameOver.savedName = table.highScores[gameOver.rank - 1]?.name ?? '';
+  showGameOver();
+}
+
+// ---- Starting and playing games ----
 
 /** A game waiting for the player to read its mode's intro. */
 let afterIntro: (() => void) | null = null;
+const introSeen = (m: IntroMode) => !!localStore.get<Partial<Record<IntroMode, boolean>>>('introSeen', {})[m];
 
 /** The first game of Puzzle, Daily or Arcade starts with a short explanation of the mode. */
 function withIntro(m: IntroMode, start: () => void): void {
-  const seen = localStore.get<Partial<Record<IntroMode, boolean>>>('introSeen', {});
-  if (seen[m]) return start();
   afterIntro = () => {
     localStore.set('introSeen', { ...localStore.get('introSeen', {}), [m]: true });
     start();
@@ -429,17 +294,15 @@ function withIntro(m: IntroMode, start: () => void): void {
 /** Starts a Classic or Arcade run, as selected on the title screen (Arcade plays at Fast). */
 function startRun(kind: RunKind): void {
   const runMode: RunMode = prefsStore.mode === 'arcade' ? 'arcade' : 'classic';
-  if (runMode === 'arcade' && mode === 'menu' && !localStore.get<Record<string, boolean>>('introSeen', {}).arcade) {
-    return withIntro('arcade', () => startRun(kind));
-  }
+  if (runMode === 'arcade' && mode === 'menu' && !introSeen('arcade')) return withIntro('arcade', () => startRun(kind));
   puzzle = null;
-  run = new Run(kind, progressFor(runMode), runMode === 'arcade' ? 'fast' : prefsStore.speed);
+  run = new Run(kind, records.progressFor(runMode), runMode === 'arcade' ? 'fast' : prefsStore.speed);
   beginLevel();
 }
 
 function playPuzzle(index: number): void {
-  if (!puzzleProgress.unlocked(index) || !PUZZLES[index]) return;
-  if (!localStore.get<Record<string, boolean>>('introSeen', {}).puzzle) return withIntro('puzzle', () => playPuzzle(index));
+  if (!records.puzzles.unlocked(index) || !PUZZLES[index]) return;
+  if (!introSeen('puzzle')) return withIntro('puzzle', () => playPuzzle(index));
   run = null;
   puzzle = { def: PUZZLES[index], index, daily: null, sim: startPuzzle(PUZZLES[index]) };
   beginLevel();
@@ -448,11 +311,12 @@ function playPuzzle(index: number): void {
 /** Today's Daily: the scored try if it's still unused, otherwise practice. */
 function playDaily(practice: boolean): void {
   const key = dayKey(new Date());
-  if (dailyParReady?.key !== key) return;
+  const par = records.parFor(key);
+  if (!par) return;
   // Before the try is used up, so reading about it doesn't cost it.
-  if (!localStore.get<Record<string, boolean>>('introSeen', {}).daily) return withIntro('daily', () => playDaily(practice));
-  const def: Puzzle = { ...dailyBoard(key), par: dailyParReady.par };
-  const scored = !practice && dailyProgress.start(key, def.par);
+  if (!introSeen('daily')) return withIntro('daily', () => playDaily(practice));
+  const def: Puzzle = { ...dailyBoard(key), par };
+  const scored = !practice && records.daily.start(key, def.par);
   run = null;
   puzzle = { def, index: null, daily: { key, scored }, sim: startPuzzle(def) };
   beginLevel();
@@ -460,9 +324,9 @@ function playDaily(practice: boolean): void {
 
 async function shareDaily(button: HTMLElement): Promise<void> {
   const key = dayKey(new Date());
-  const result = dailyProgress.result(key);
+  const result = records.daily.result(key);
   if (!result) return;
-  const text = shareText(key, result, dailyProgress.streak(key));
+  const text = shareText(key, result, records.daily.streak(key));
   try {
     if (navigator.share) await navigator.share({ text });
     else {
@@ -475,12 +339,22 @@ async function shareDaily(button: HTMLElement): Promise<void> {
 }
 
 function beginLevel(): void {
+  // Stats for achievements: how far runs get.
+  if (run?.mode === 'arcade') records.achievements.record({ best: { bestArcadeBoard: run.level } });
+  else if (run) records.achievements.record({ best: { bestClassicLevel: run.level } });
+  capturesOnBoard = 0;
+  trappedThisLevel.clear();
   previous = snapshot(sim()!);
   accumulator = 0;
   input.mouseOrientation = 'vertical';
   mode = 'playing';
   showScreen(null);
   if (!localStore.get('hintSeen', false)) setHint(true);
+}
+
+function nextLevel(): void {
+  run!.nextLevel();
+  beginLevel();
 }
 
 function pause(): void {
@@ -494,6 +368,16 @@ function resume(): void {
   mode = 'playing';
   showScreen(null);
 }
+
+/** Restarts a puzzle or Daily practice (never a scored Daily try). */
+function restartPuzzle(): boolean {
+  if (!puzzle || mode === 'menu' || puzzle.daily?.scored) return false;
+  if (puzzle.daily) playDaily(true);
+  else playPuzzle(puzzle.index!);
+  return true;
+}
+
+// ---- Input ----
 
 screenEl.addEventListener('click', (e) => {
   const action = (e.target as HTMLElement).closest<HTMLElement>('[data-action]')?.dataset.action;
@@ -517,8 +401,7 @@ screenEl.addEventListener('click', (e) => {
     case 'puzzle':
       return playPuzzle(Number(arg));
     case 'retry':
-      if (puzzle?.daily) playDaily(true);
-      else if (puzzle) playPuzzle(puzzle.index!);
+      restartPuzzle();
       return;
     case 'daily':
       return playDaily(false);
@@ -529,13 +412,15 @@ screenEl.addEventListener('click', (e) => {
     case 'mode':
       prefsStore.mode = modeById(arg).id;
       savePrefs();
-      return redrawSettings();
+      return redraw?.();
     case 'speed':
       prefsStore.speed = arg === 'slow' ? 'slow' : 'fast';
       savePrefs();
-      return redrawSettings();
+      return redraw?.();
     case 'scores':
       return showScores(arg ? modeById(arg).id : 'classic');
+    case 'achievements':
+      return showAchievements();
     case 'settings':
       return showSettings();
     case 'pause-menu':
@@ -553,22 +438,22 @@ screenEl.addEventListener('click', (e) => {
       return;
     case 'atoms-page':
       atomPage = (atomPage + Number(arg) + atomPages) % atomPages;
-      return redrawSettings();
+      return redraw?.();
     case 'theme':
       applyTheme(themeById(arg));
       localStore.set('theme', theme.id);
-      return redrawSettings();
+      return redraw?.();
     case 'check-update':
-      return void checkForUpdateNow();
+      return void updates.checkNow();
     case 'apply-update':
-      return void updateSW(true);
+      return updates.apply();
     case 'show-hint':
       localStore.set('hintSeen', false);
       localStore.set('introSeen', {});
       (e.target as HTMLElement).closest('button')!.textContent = 'Tutorials show again on your next games';
       return;
     case 'install':
-      return void install();
+      return void installer.install();
     case 'intro-ok': {
       const start = afterIntro;
       afterIntro = null;
@@ -581,21 +466,21 @@ screenEl.addEventListener('click', (e) => {
     case 'toggle-music':
       audio.setMusic(!audio.settings.music);
       saveAudio();
-      return redrawSettings();
+      return redraw?.();
     case 'toggle-sfx':
       audio.setSfx(!audio.settings.sfx);
       saveAudio();
-      return redrawSettings();
+      return redraw?.();
     case 'toggle-motion':
       prefsStore.reduceMotion = !prefsStore.reduceMotion;
       savePrefs();
       applyMotion();
-      return redrawSettings();
+      return redraw?.();
     case 'toggle-haptics':
       haptics.enabled = !haptics.enabled;
       savePrefs();
       haptics.event({ type: 'wall-completed', slot: 'a' });
-      return redrawSettings();
+      return redraw?.();
     case 'save-name':
       return saveName();
     case 'quit':
@@ -605,25 +490,6 @@ screenEl.addEventListener('click', (e) => {
       return showMenu();
   }
 });
-
-/** Redraws the current screen after a switch or selection on it changes. */
-function redrawSettings(): void {
-  redraw?.();
-}
-
-function showGameOver(): void {
-  const g = gameOver!;
-  showScreen(gameOverScreen(g.reason, run!.score, run!.level, run!.kind === 'scored', g.rank, progress.playerName, g.savedName));
-}
-
-function saveName(): void {
-  if (!gameOver?.rank) return;
-  const value = (document.getElementById('name-input') as HTMLInputElement | null)?.value ?? '';
-  const table = progressFor(run!.mode);
-  table.nameScore(gameOver.rank, value);
-  gameOver.savedName = table.highScores[gameOver.rank - 1]?.name ?? '';
-  showGameOver();
-}
 
 // Volume sliders in Settings: heard while dragging, saved when let go.
 screenEl.addEventListener('input', (e) => {
@@ -646,39 +512,23 @@ screenEl.addEventListener('submit', (e) => {
   saveName();
 });
 
-function nextLevel(): void {
-  run!.nextLevel();
-  beginLevel();
-}
-
-/**
- * Keyboard shortcuts for desktop: Esc or P pauses and resumes, Space turns the next wall, R restarts
- * a puzzle (not a scored Daily try), Enter continues from a result. Ignored while typing a name.
- */
-window.addEventListener('keydown', (e) => {
-  const typing = e.target instanceof Element && e.target.closest('input, textarea');
-  if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
-  const key = e.key.toLowerCase();
-  if ((key === 'escape' || key === 'p') && (mode === 'playing' || mode === 'paused')) {
-    e.preventDefault();
-    return mode === 'paused' ? resume() : pause();
-  }
-  if (key === ' ' && mode === 'playing') {
-    e.preventDefault();
-    input.mouseOrientation = input.mouseOrientation === 'vertical' ? 'horizontal' : 'vertical';
-    return;
-  }
-  if (key === 'r' && puzzle && (mode === 'playing' || mode === 'paused' || mode === 'over' || mode === 'cleared') && !puzzle.daily?.scored) {
-    return puzzle.daily ? playDaily(true) : playPuzzle(puzzle.index!);
-  }
-  if (key === 'enter' && mode === 'cleared' && !puzzle?.daily) {
-    // The dialog's main button: the next level or puzzle (a Daily's would share, so not that one).
-    const next = screenEl.querySelector<HTMLElement>('.dialog .primary');
-    if (next) {
-      e.preventDefault();
-      next.click();
-    }
-  }
+listenToKeys({
+  mode: () => mode,
+  pause,
+  resume,
+  turnWall: () => (input.mouseOrientation = input.mouseOrientation === 'vertical' ? 'horizontal' : 'vertical'),
+  restart: restartPuzzle,
+  continueResult: () => {
+    // A Daily's main button would share, so not that one.
+    const next = puzzle?.daily ? null : screenEl.querySelector<HTMLElement>('.dialog .primary');
+    next?.click();
+    return !!next;
+  },
+  wake: () => {
+    if (!demoShowing()) return false;
+    showMenu();
+    return true;
+  },
 });
 
 hud.pause.addEventListener('click', () => (mode === 'paused' ? resume() : pause()));
@@ -686,10 +536,8 @@ hud.pause.addEventListener('click', () => (mode === 'paused' ? resume() : pause(
 let layout = layoutBoard(28, 20, 0, 0, 1, 1);
 function relayout(): void {
   // Layout size, not the on-screen box: in portrait the stage is drawn rotated (ADR-0013).
-  const width = host.clientWidth;
-  const height = host.clientHeight;
   const pad = 8;
-  layout = layoutBoard(28, 20, pad, pad, width - 2 * pad, height - 2 * pad);
+  layout = layoutBoard(28, 20, pad, pad, host.clientWidth - 2 * pad, host.clientHeight - 2 * pad);
   renderer.setLayout(layout, 28, 20);
 }
 new ResizeObserver(relayout).observe(host);
@@ -717,24 +565,11 @@ document.addEventListener('visibilitychange', () => {
     audio.suspend();
   } else {
     audio.resume();
-    void checkForUpdate().catch(() => {});
+    void updates.check().catch(() => {});
   }
 });
 
-/** One puzzle attempt, logged in dev builds to tune pars from real play (`atomTrap.puzzleLog()`). */
-interface PuzzleAttempt {
-  puzzle: number;
-  cleared: boolean;
-  walls: number;
-  livesLost: number;
-}
-
-function logPuzzleAttempt(s: Simulation, cleared: boolean): void {
-  if (!import.meta.env.DEV || puzzle?.index == null) return;
-  const log = localStore.get<PuzzleAttempt[]>('puzzleLog', []);
-  log.push({ puzzle: puzzle.index, cleared, walls: s.wallsPlaced, livesLost: s.rules.lives - s.lives });
-  localStore.set('puzzleLog', log.slice(-1000));
-}
+// ---- Game events and results ----
 
 /**
  * A cleared board gets a moment of its own before the result: the board flashes and sparks fly,
@@ -753,43 +588,90 @@ function celebrate(show: () => void): void {
   }, 800);
 }
 
-/** Counts each `[data-count]` number in `root` up from zero. */
-function countUp(root: HTMLElement): void {
-  for (const el of root.querySelectorAll<HTMLElement>('[data-count]')) {
-    const to = Number(el.dataset.count);
-    const t0 = performance.now();
-    const tick = (now: number) => {
-      const k = Math.min(1, (now - t0) / 900);
-      el.textContent = Math.round(to * (1 - (1 - k) ** 3)).toLocaleString('en-US');
-      if (k < 1 && el.isConnected) requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
+/** Atoms captured on the current Arcade board (for Hat trick). */
+let capturesOnBoard = 0;
+/** Classic atoms already counted as trapped on this level (for Atom trap), so each counts once. */
+const trappedThisLevel = new Set<number>();
+
+/** Keeps the lifetime stats achievements count from (src/game/achievements.ts). */
+function trackStats(s: Simulation, events: GameEvent[]): void {
+  const t = records.achievements;
+  if (events.some((e) => e.type === 'wall-started')) t.record({ add: { wallsPlaced: 1 } });
+  for (const e of events) {
+    if (e.type === 'atom-captured') {
+      capturesOnBoard++;
+      t.record({ add: { atomsCaptured: 1 }, best: { bestCapturesOnBoard: capturesOnBoard } });
+    } else if (e.type === 'cells-removed' && run?.mode === 'classic') {
+      // A wall completed: is any atom now walled in so tightly it can't move?
+      s.atoms.forEach((_, i) => {
+        if (trappedThisLevel.has(i) || !s.atomStuck(i)) return;
+        trappedThisLevel.add(i);
+        t.record({ add: { classicTraps: 1 } });
+      });
+    } else if (e.type === 'chain') {
+      t.record({ best: { bestChain: s.chainMultiplier } });
+    } else if (e.type === 'level-cleared' && run?.mode === 'arcade' && s.liveAtoms === 0) {
+      t.record({ add: { cleanSweeps: 1 } });
+    } else if ((e.type === 'level-cleared' || e.type === 'game-over') && run?.mode === 'classic' && run.kind === 'scored') {
+      t.record({ best: { bestClassicScore: Math.round(run.score) } });
+    }
   }
 }
 
+/** Unlocks newly earned achievements and announces them, one notice at a time. */
+const toastEl = document.getElementById('toast')!;
+const toastQueue: Achievement[] = [];
+function checkAchievements(): void {
+  const fresh = records.achievements.check(records.achievementView());
+  if (!fresh.length) return;
+  const idle = toastQueue.length === 0;
+  toastQueue.push(...fresh);
+  if (idle) nextToast();
+}
+function nextToast(): void {
+  const a = toastQueue[0];
+  if (!a) {
+    toastEl.hidden = true;
+    return;
+  }
+  toastEl.innerHTML = `<span class="toast-kicker">Achievement unlocked</span><b>${a.name}</b><span class="dim">${a.description}</span>`;
+  toastEl.hidden = false;
+  audio.chime();
+  setTimeout(() => {
+    toastQueue.shift();
+    nextToast();
+  }, 5000);
+}
+
 function handleStepEvents(s: Simulation): void {
-  for (const e of s.step()) {
+  const events = s.step();
+  if (events.length) {
+    trackStats(s, events);
+    // After this step's results are saved (puzzle bests, Daily tries), below.
+    queueMicrotask(checkAchievements);
+  }
+  for (const e of events) {
     audio.event(e);
     haptics.event(e);
-    if (run?.mode === 'arcade') arcadeFeedback(s, e);
+    if (run?.mode === 'arcade') arcadeFeedback.event(s, e);
     if (puzzle?.daily && (e.type === 'level-cleared' || e.type === 'game-over')) {
       const cleared = e.type === 'level-cleared';
       mode = cleared ? 'cleared' : 'over';
       const { key, scored } = puzzle.daily;
-      if (scored) dailyProgress.finish(key, cleared, s.wallsPlaced);
-      const result = dailyResultScreen({ number: dayNumber(key), cleared, walls: s.wallsPlaced, par: puzzle.def.par, scored, streak: dailyProgress.streak(key) });
+      if (scored) records.daily.finish(key, cleared, s.wallsPlaced);
+      const result = dailyResultScreen({ number: dayNumber(key), cleared, walls: s.wallsPlaced, par: puzzle.def.par, scored, streak: records.daily.streak(key) });
       if (cleared) celebrate(() => showScreen(result));
       else showScreen(result);
     } else if (puzzle?.index != null && e.type === 'level-cleared') {
       mode = 'cleared';
-      logPuzzleAttempt(s, true);
+      logPuzzleAttempt(localStore, puzzle.index, s, true);
       const stars = starsFor(puzzle.def, s.wallsPlaced);
-      const improved = puzzleProgress.record(puzzle.index, s.wallsPlaced);
-      const best = puzzleProgress.bestWalls[puzzle.index] ?? s.wallsPlaced;
+      const improved = records.puzzles.record(puzzle.index, s.wallsPlaced);
+      const best = records.puzzles.bestWalls[puzzle.index] ?? s.wallsPlaced;
       const result = puzzleClearedScreen({ index: puzzle.index, stars, improved, wallsUsed: s.wallsPlaced, best, hasNext: puzzle.index + 1 < PUZZLES.length });
       celebrate(() => showScreen(result));
     } else if (puzzle?.index != null && e.type === 'game-over') {
-      logPuzzleAttempt(s, false);
+      logPuzzleAttempt(localStore, puzzle.index, s, false);
       mode = 'over';
       showScreen(puzzleFailedScreen(e.reason, puzzle.index));
     } else if (e.type === 'level-cleared' && run?.mode === 'arcade') {
@@ -824,8 +706,16 @@ function handleStepEvents(s: Simulation): void {
   }
 }
 
+// ---- Frame loop ----
+
 renderer.app.ticker.add((ticker) => {
-  if (demoShowing()) return drawDemo(ticker.deltaMS);
+  if (demoShowing()) {
+    demo ??= new Demo();
+    // Step first: a step (or a new board) replaces `sim` and `previous`, which the draw must then use.
+    const stepPart = demo.tick(ticker.deltaMS);
+    renderer.draw(demo.sim, demo.previous, stepPart);
+    return finishFrame(null, 0);
+  }
   // A title screen left alone goes back to the demo.
   if (mode === 'menu' && !motionReduced() && screenEl.querySelector('.page.title') && performance.now() - lastInput > ATTRACT_AFTER_MS) {
     return showAttract();
@@ -844,169 +734,35 @@ renderer.app.ticker.add((ticker) => {
     }
   }
   renderer.draw(s, previous, s && mode === 'playing' && !hintActive ? accumulator / s.rules.stepMs : 1);
-  updateHud();
-  const growing = mode === 'playing' && s ? (s.halves.a?.cells.length ?? 0) + (s.halves.b?.cells.length ?? 0) : 0;
+  finishFrame(s, mode === 'playing' && s ? (s.halves.a?.cells.length ?? 0) + (s.halves.b?.cells.length ?? 0) : 0);
+});
+
+/** The HUD, the update bar and the wall hum, every frame. */
+function finishFrame(s: Simulation | null, growing: number): void {
+  hud.update(mode, { run, puzzle }, s, s ? accumulator / s.rules.stepMs : 0, records.classic.highestLevel);
+  // Offer a new version only between games, so reloading never throws one away.
+  updates.showBar(mode === 'menu' || mode === 'over');
   audio.setGrowing(growing);
-});
-
-/** Steps and draws the title demo; a finished board makes way for a new one after a short pause. */
-function drawDemo(deltaMS: number): void {
-  if (!demo || (demo.endedAt !== null && performance.now() - demo.endedAt > 2000)) newDemo();
-  const d = demo!;
-  if (d.sim.status === 'playing') {
-    accumulator += Math.min(deltaMS, 250);
-    while (accumulator >= d.sim.rules.stepMs && d.sim.status === 'playing') {
-      previous = snapshot(d.sim);
-      d.bot.act(d.sim);
-      d.sim.step();
-      accumulator -= d.sim.rules.stepMs;
-    }
-    if (d.sim.status !== 'playing') d.endedAt = performance.now();
-  }
-  renderer.draw(d.sim, previous, d.sim.status === 'playing' ? accumulator / d.sim.rules.stepMs : 1);
-  updateHud();
-  audio.setGrowing(0);
 }
-
-/** Arcade feedback (ADR-0018): points rising where cells filled, implosions, and shakes. */
-let lastFill = { x: 0, y: 0 };
-function arcadeFeedback(s: Simulation, e: GameEvent): void {
-  const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
-  // How much a catch matters: a thin wall (~100 points) is light, 5,000 points or more is the top.
-  const weight = (points: number) => Math.log10(Math.max(points, 100) / 100) / Math.log10(50);
-  if (e.type === 'cells-removed') {
-    lastFill = { x: e.x, y: e.y };
-    renderer.popup(`+${fmt(e.points)}${s.chainMultiplier > 1 ? ` ×${s.chainMultiplier}` : ''}`, e.x, e.y, weight(e.points));
-  } else if (e.type === 'atom-captured') {
-    renderer.implode(e.x, e.y);
-    renderer.popup(`Captured +${fmt(e.points)}`, e.x, e.y - 1, 1);
-  } else if (e.type === 'big-catch') {
-    renderer.popup('Big catch ×2', lastFill.x, lastFill.y + 1.5, 0.8);
-    renderer.shake(0.3);
-  }
-}
-
-/** Lives show as dots up to this many; above it, as a number. */
-const MAX_LIFE_DOTS = 8;
-let shownLives = '';
-let shownScore = 0;
-let shownStars = -1;
-
-function updateHud(): void {
-  const s = sim();
-  hud.mode.textContent = puzzle?.daily ? 'Daily' : puzzle ? 'Puzzle' : run?.mode === 'arcade' ? 'Arcade' : 'Classic';
-  hud.level.textContent = puzzle?.daily ? `#${dayNumber(puzzle.daily.key)}` : String(puzzle ? puzzle.index! + 1 : (run?.level ?? progress.highestLevel));
-  const lives = s?.lives ?? 0;
-  // A +1 life power-up can take lives above the level's start.
-  const maxLives = Math.max(s?.rules.lives ?? 0, lives);
-  const livesKey = `${lives}/${maxLives}`;
-  if (livesKey !== shownLives) {
-    shownLives = livesKey;
-    const dots = maxLives > 0 && maxLives <= MAX_LIFE_DOTS;
-    hud.dots.innerHTML = dots ? Array.from({ length: maxLives }, (_, i) => `<i${i < lives ? ' class="on"' : ''}></i>`).join('') : '';
-    hud.lives.textContent = String(lives);
-    hud.lives.classList.toggle('sr-only', dots);
-  }
-  const coverage = Math.floor((s?.coverage ?? 0) * 100);
-  const target = Math.round((s?.rules.targetCoverage ?? 0.75) * 100);
-  hud.coverage.textContent = `${coverage}%`;
-  hud.coverageBar.style.width = `${coverage}%`;
-  hud.target.textContent = `/ ${target}%`;
-  hud.targetMark.style.left = `${target}%`;
-  // Puzzles show walls used against par, and the stars still within reach, instead of a score.
-  hud.scoreLabel.textContent = puzzle ? `Walls · par ${puzzle.def.par[0]}` : 'Score';
-  // Arcade's chain: the multiplier, and a bar draining until the chain ends.
-  hud.chain.hidden = run?.mode !== 'arcade';
-  if (run?.mode === 'arcade' && s) {
-    const active = s.chain > 0;
-    const left = active ? (s.chainEndsAt - s.steps + 1 - accumulator / s.rules.stepMs) / s.rules.chainWindow : 0;
-    hud.chainValue.textContent = `×${s.chainMultiplier}`;
-    // Pips: progress towards the next multiplier (all lit at the top).
-    const atTop = s.chainMultiplier === s.rules.chainMultipliers[s.rules.chainMultipliers.length - 1];
-    const lit = atTop ? s.rules.chainStep : s.chainProgress;
-    if (hud.chainPips.childElementCount !== s.rules.chainStep || hud.chainPips.dataset.lit !== String(lit)) {
-      hud.chainPips.dataset.lit = String(lit);
-      hud.chainPips.innerHTML = Array.from({ length: s.rules.chainStep }, (_, i) => `<i${i < lit ? ' class="on"' : ''}></i>`).join('');
-    }
-    hud.chainBar.style.width = `${Math.max(0, Math.min(1, left)) * 100}%`;
-    hud.chain.classList.toggle('on', active);
-  }
-  // The score counts up to its new value, so each catch visibly adds to it.
-  const score = run?.score ?? 0;
-  shownScore = Math.abs(score - shownScore) < 1 || score < shownScore ? score : shownScore + (score - shownScore) * 0.15;
-  hud.score.textContent = puzzle ? String(s?.wallsPlaced ?? 0) : Math.round(shownScore).toLocaleString('en-US');
-  hud.score.classList.toggle('counting', score - shownScore >= 1);
-  const reachable = puzzle && s ? starsFor(puzzle.def, s.wallsPlaced) : -1;
-  if (reachable !== shownStars) {
-    shownStars = reachable;
-    hud.stars.innerHTML = reachable < 0 ? '' : [0, 1, 2].map((i) => `<i${i < reachable ? ' class="on"' : ''}>★</i>`).join('');
-    hud.stars.setAttribute('aria-label', reachable < 0 ? '' : `${reachable} stars within reach`);
-  }
-  hud.unscored.hidden = run?.kind !== 'continue';
-  hud.timeChip.hidden = !!s && !s.rules.timeLimit;
-  const time = s?.timeLeft ?? 0;
-  hud.time.textContent = String(time);
-  hud.timeBar.style.width = `${s ? Math.min(100, (100 * time) / s.rules.timeLimit) : 0}%`;
-  hud.timeBar.classList.toggle('low', !!s && time <= s.rules.timeWarningAt);
-  hud.pause.hidden = mode !== 'playing' && mode !== 'paused';
-  // The HUD belongs to a game; the menus (and the demo behind the title) have none.
-  hudEl.hidden = mode === 'menu';
-  // Offer a new version only between runs, so reloading never throws away a game in progress.
-  updateEl.hidden = !updateReady || (mode !== 'menu' && mode !== 'over');
-}
-
-// A new deploy is downloaded in the background; the player chooses when to switch to it.
-const updateEl = $('update');
-let updateReady = false;
-let swRegistration: ServiceWorkerRegistration | undefined;
-const updateSW = registerSW({
-  immediate: true,
-  onNeedRefresh: () => (updateReady = true),
-  onRegisteredSW: (_url, registration) => {
-    swRegistration = registration;
-    // Opening the game checks for a new version; also check hourly while it stays open.
-    if (registration) setInterval(() => void checkForUpdate(), 60 * 60 * 1000);
-  },
-});
-updateEl.addEventListener('click', (e) => {
-  const action = (e.target as HTMLElement).closest<HTMLElement>('[data-action]')?.dataset.action;
-  if (action === 'update') void updateSW(true);
-  else if (action === 'later') updateReady = false;
-});
 
 // Dev-only hook for inspecting the running game from the browser console.
-if (import.meta.env.DEV) Object.defineProperty(window, 'atomTrap', {
+if (import.meta.env.DEV) {
+  Object.defineProperty(window, 'atomTrap', {
     // `fakeUpdate()` shows the new-version bar, since the dev server has no service worker.
     // `tryLayout('cross')` swaps the current (or a new, unscored) level for that board layout.
+    // `puzzleLog()` prints your logged puzzle attempts next to the pars.
     get: () => ({
       run,
       mode,
       layout,
-      progress,
+      records,
       renderer,
       audio,
       haptics,
       applyTheme,
-      fakeUpdate: () => (updateReady = true),
+      fakeUpdate: () => (updates.ready = true),
       layouts: LAYOUTS.map((l) => l.id),
-      // A table per puzzle of your logged attempts, next to its pars.
-      puzzleLog: () => {
-        const log = localStore.get<PuzzleAttempt[]>('puzzleLog', []);
-        console.table(
-          PUZZLES.map((p, i) => {
-            const mine = log.filter((a) => a.puzzle === i);
-            const walls = mine.filter((a) => a.cleared).map((a) => a.walls).sort((a, b) => a - b);
-            return {
-              puzzle: `${i + 1} ${p.name}`,
-              attempts: mine.length,
-              cleared: walls.length,
-              best: walls[0] ?? null,
-              median: walls.length ? walls[Math.floor((walls.length - 1) / 2)] : null,
-              par: p.par.join(' / '),
-            };
-          }),
-        );
-      },
+      puzzleLog: () => printPuzzleLog(localStore),
       tryLayout: (id: string) => {
         if (!run) startRun('continue');
         run!.sim = createLevel({ level: run!.level, speed: prefsStore.speed, layout: id, seed: (Math.random() * 0xffffffff) >>> 0 });
@@ -1014,5 +770,9 @@ if (import.meta.env.DEV) Object.defineProperty(window, 'atomTrap', {
       },
     }),
   });
+}
+
+// Achievements earned before they existed (or on another version) unlock quietly at start.
+records.achievements.check(records.achievementView());
 
 showAttract();

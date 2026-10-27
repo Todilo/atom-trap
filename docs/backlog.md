@@ -24,6 +24,9 @@ Open items picked up along the way, with the milestone they belong to (ADR-0010)
 | Daily Challenge | after v1 | One board a day from the date, par from the bot on the device, one scored try, streak and share (ADR-0017). |
 | Arcade core loop | after v1 | Capture atoms in small pockets, one run clock, chains up to ×8, floating points and implosions; own high scores (ADR-0018). A first version with random power-up tiles felt flat and was replaced. |
 | Polish batch | after v1 | Mode intros with animated pictures; clear celebrations with stars popping in and totals counting up; 13 more layouts (19 in all, each checked by the bot); an Install app button; volume sliders; Reduce motion; keyboard shortcuts (Esc/P, Space, R, Enter). |
+| Achievements | after v1 | 22 badges across all modes with progress, an unlock notice and an Achievements page (ADR-0019). |
+| 24 puzzles | after v1 | A second twelve on the new layouts, tuned with the bot and ordered by difficulty. |
+| Split main.ts | after v1 | The HUD, records, updates, install, demo, feedback, keys and puzzle log moved into src/shell/. |
 
 ## Ideas for after v1
 
@@ -31,7 +34,8 @@ Open items picked up along the way, with the milestone they belong to (ADR-0010)
 |---|---|
 | Pick the portrait rotation direction from the device sensors | Today it's always clockwise (ADR-0013). |
 | Arcade: held power-ups | Dropped by captures and big catches, one slot, used when you choose: Freeze, Laser, Bomb, Slow-mo (ADR-0018). |
-| Arcade: missions | Goals that unlock atom styles and themes. |
+| Achievement rewards | New cosmetics (atom styles, themes) that achievements could unlock; today they're badges only (ADR-0019). |
+| Records page | Lifetime stats (best chain, captures, walls, furthest boards) are already kept for achievements. |
 | Arcade: new atoms | Heavy, Fast, Splitter and Ghost, one introduced per level (ADR-0018). |
 | Tune Arcade | Pocket size, capture points, chain window and steps, and clock times are first choices. |
 | Tune puzzle pars from real play | Dev builds log attempts (`atomTrap.puzzleLog()`); adjust pars once there's enough play. |

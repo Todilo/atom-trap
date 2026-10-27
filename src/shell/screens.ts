@@ -1,3 +1,4 @@
+import type { AchievementState } from '../game/achievements';
 import { dailyStars, dayNumber, type DailyResult } from '../game/daily';
 import { GAME_MODES, modeById, type GameModeId } from '../game/modes';
 import { PUZZLES } from '../game/puzzles';
@@ -21,6 +22,7 @@ const button = (action: string, label: string, cls = '', attrs = '') =>
 /** Stroke icons, coloured by CSS (`currentColor`). */
 const icon = {
   download: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>',
+  medal: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3l2 6M16 3l-2 6"/><circle cx="12" cy="15" r="6"/><path d="M12 12v6M9 15h6"/></svg>',
   trophy:
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/></svg>',
   sliders:
@@ -187,6 +189,7 @@ export function titleScreen(prefs: Prefs, tables: Record<RunMode, ScoreTable>, p
         <div class="brand">${logo}<div><h1>Atom Trap</h1><p class="tagline">A neon tribute to JezzBall (1992)</p></div></div>
         <nav class="topnav" aria-label="Menu">
           ${canInstall ? button('install', `${icon.download}<span>Install app</span>`, 'nav') : ''}
+          ${button('achievements', `${icon.medal}<span>Achievements</span>`, 'nav')}
           ${button('scores', `${icon.trophy}<span>High scores</span>`, 'nav')}
           ${button('settings', `${icon.sliders}<span>Settings</span>`, 'nav')}
         </nav>
@@ -676,5 +679,44 @@ export function introScreen(m: IntroMode): string {
         ${button('menu', 'Back', 'secondary grow')}
         ${button('intro-ok', `${icon.play}Let's play`, 'primary big grow')}
       </div>
+    </div>`;
+}
+
+/** Every achievement by group: unlocked ones lit with their date, the rest with their progress. */
+export function achievementsScreen(states: AchievementState[]): string {
+  const done = states.filter((s) => s.unlockedAt).length;
+  const groups = [...new Set(states.map((s) => s.achievement.group))];
+  const card = (s: AchievementState) => {
+    const on = !!s.unlockedAt;
+    const date = on ? new Date(s.unlockedAt!).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+    return `
+      <li class="achievement${on ? ' on' : ''}">
+        <span class="medal">${icon.medal}</span>
+        <span class="achievement-text">
+          <b>${s.achievement.name}</b>
+          <span class="dim">${s.achievement.description}</span>
+          ${
+            on
+              ? `<span class="achievement-done">Unlocked ${date}</span>`
+              : `<span class="achievement-progress"><span class="bar"><span style="width:${(100 * s.current) / s.goal}%"></span></span><span class="dim">${fmt(s.current)} / ${fmt(s.goal)}</span></span>`
+          }
+        </span>
+      </li>`;
+  };
+  return `
+    <div class="page achievements-page">
+      <header class="topbar">
+        <div class="brand">${backButton('menu')}<h1 class="page-title">Achievements</h1></div>
+        <div class="total-stars">${icon.medal}<b>${done} / ${states.length}</b></div>
+      </header>
+      ${groups
+        .map(
+          (g) => `
+        <section class="achievement-group" aria-label="${g}">
+          <h2 class="section-label">${g}</h2>
+          <ul class="achievement-list">${states.filter((s) => s.achievement.group === g).map(card).join('')}</ul>
+        </section>`,
+        )
+        .join('')}
     </div>`;
 }

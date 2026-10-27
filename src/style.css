@@ -2028,3 +2028,140 @@ body {
   -webkit-user-select: auto;
   touch-action: auto;
 }
+
+/* Achievement notice: slides in under the HUD, one at a time. */
+#toast {
+  position: absolute;
+  top: calc(env(safe-area-inset-top) + var(--hud-height) + 3 * var(--gap));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  max-width: calc(100% - 32px);
+  padding: 10px 22px;
+  border-radius: 14px;
+  border: 1px solid var(--highlight);
+  background: var(--surface);
+  box-shadow: 0 0 30px var(--highlight-soft);
+  font-size: 13px;
+  text-align: center;
+  pointer-events: none;
+  animation: toast-in 0.35s ease-out;
+}
+
+#toast[hidden] {
+  display: none;
+}
+
+#toast b {
+  font-family: var(--display);
+  font-size: 18px;
+  color: var(--highlight);
+}
+
+#toast .toast-kicker {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+#toast .dim {
+  color: var(--text-dim);
+}
+
+@keyframes toast-in {
+  from {
+    transform: translate(-50%, -16px);
+    opacity: 0;
+  }
+}
+
+/* The achievements page. */
+#screen .total-stars svg {
+  width: 22px;
+  height: 22px;
+  color: var(--highlight);
+}
+
+#screen .achievement-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#screen .achievement-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 10px;
+}
+
+#screen .achievement {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+#screen .achievement.on {
+  border-color: var(--highlight);
+}
+
+#screen .achievement .medal svg {
+  width: 30px;
+  height: 30px;
+  color: var(--line);
+}
+
+#screen .achievement.on .medal svg {
+  color: var(--highlight);
+  filter: drop-shadow(0 0 6px var(--highlight-soft));
+}
+
+#screen .achievement-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+  font-size: 13px;
+}
+
+#screen .achievement-text b {
+  font-size: 15px;
+}
+
+#screen .achievement-done {
+  font-size: 12px;
+  color: var(--highlight);
+}
+
+#screen .achievement-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+#screen .achievement-progress .bar {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--grid);
+  overflow: hidden;
+}
+
+#screen .achievement-progress .bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}

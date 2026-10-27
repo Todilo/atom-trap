@@ -150,6 +150,18 @@ export class Simulation {
     return this.chain === 0 ? 0 : ((this.chain - 1) % this.rules.chainStep) + 1;
   }
 
+  /**
+   * Whether atom `i` is walled in for good: atoms only move diagonally, so once all four diagonal
+   * cells are filled (or off the board) it can never move again, however big its area is.
+   */
+  atomStuck(i: number): boolean {
+    const a = this.atoms[i];
+    if (a.captured) return false;
+    return [-1, 1].every((dx) =>
+      [-1, 1].every((dy) => !this.inBounds(a.x + dx, a.y + dy) || this.grid[this.idx(a.x + dx, a.y + dy)] === CELL_REMOVED),
+    );
+  }
+
   /** Atoms still on the board (Arcade captures take them off). */
   get liveAtoms(): number {
     return this.atoms.filter((a) => !a.captured).length;

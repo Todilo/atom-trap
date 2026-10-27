@@ -133,6 +133,27 @@ export class DailyProgress {
     return n;
   }
 
+  /** The longest run of days in a row with a try, ever. */
+  get bestStreak(): number {
+    const days = Object.keys(this.all).sort();
+    let best = 0;
+    let run = 0;
+    days.forEach((day, i) => {
+      run = i > 0 && previousDay(day) === days[i - 1] ? run + 1 : 1;
+      best = Math.max(best, run);
+    });
+    return best;
+  }
+
+  /** Days with a try, and the best stars earned on any of them. */
+  get played(): number {
+    return Object.keys(this.all).length;
+  }
+
+  get bestStars(): number {
+    return Math.max(0, ...Object.values(this.all).map(dailyStars));
+  }
+
   /** The most recent days played, newest first. */
   history(limit = 14): { key: string; result: DailyResult }[] {
     return Object.entries(this.all)

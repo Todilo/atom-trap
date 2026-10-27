@@ -1,6 +1,6 @@
 # ADR-0018: Arcade mode as time-attack atom hunting
 
-- **Status:** Accepted (core loop built; held power-ups, missions and new atoms planned)
+- **Status:** Accepted (core loop built; held power-ups and new atoms planned)
 - **Date:** 2026-10-26
 
 ## Context
@@ -37,7 +37,7 @@ Arcade makes the game's name literal: **you trap the atoms themselves**, against
 **Planned next**, once the core loop is confirmed fun:
 
 - **Held power-ups:** dropped by captures and big catches into one slot, used when the player chooses: Freeze, Laser (the next wall is instant and unbreakable), Bomb and Slow-mo. They replace the first version's random tiles.
-- **Missions** that unlock atom styles and themes.
+- ~~Missions that unlock atom styles and themes~~: became achievements across all modes, as badges rather than unlocks (ADR-0019).
 - **New atoms**, one per level:
   - **Heavy:** half speed, an easy capture.
   - **Fast:** two cells a step.
