@@ -23,7 +23,11 @@ export interface Puzzle {
 
 export const PUZZLE_LIVES = 3;
 
-/** In order of difficulty, from the tuning bot's results (expert walls, then casual clear rate). */
+/**
+ * In order of difficulty, from the tuning bot's results (expert walls, then casual clear rate). The
+ * second twelve (on the second batch of layouts) come after the first, so adding them kept everyone's
+ * unlocks: each puzzle opens when the one before it is cleared.
+ */
 export const PUZZLES: Puzzle[] = [
   { id: 'first-trap', name: 'First trap', atoms: 2, par: [3, 6], seed: 101 },
   { id: 'pillars', name: 'Pillars', layout: 'pillars', atoms: 2, par: [4, 9], seed: 102 },
@@ -37,6 +41,18 @@ export const PUZZLES: Puzzle[] = [
   { id: 'crowded-pillars', name: 'Crowded pillars', layout: 'pillars', atoms: 4, par: [9, 15], seed: 108 },
   { id: 'shark', name: 'Shark', layout: 'teeth', atoms: 5, par: [9, 17], seed: 112 },
   { id: 'full-frame', name: 'Full frame', layout: 'frame', atoms: 5, par: [10, 18], seed: 111 },
+  { id: 'plus-signs', name: 'Plus signs', layout: 'plus-field', atoms: 3, par: [5, 11], seed: 114 },
+  { id: 'four-corners', name: 'Four corners', layout: 'corners', atoms: 3, par: [5, 11], seed: 113 },
+  { id: 'bar-hopping', name: 'Bar hopping', layout: 'bars', atoms: 4, par: [6, 12], seed: 116 },
+  { id: 'ring-road', name: 'Ring road', layout: 'ring', atoms: 3, par: [7, 14], seed: 115 },
+  { id: 'spiral', name: 'Spiral', layout: 'spiral', atoms: 4, par: [7, 14], seed: 118 },
+  { id: 'big-h', name: 'Big H', layout: 'h-block', atoms: 4, par: [7, 12], seed: 119 },
+  { id: 'bridge', name: 'Bridge', layout: 'bridge', atoms: 4, par: [7, 14], seed: 117 },
+  { id: 'arrowhead', name: 'Arrowhead', layout: 'chevron', atoms: 5, par: [10, 15], seed: 121 },
+  { id: 'corridors', name: 'Corridors', layout: 'corridors', atoms: 5, par: [11, 20], seed: 122 },
+  { id: 'checkmate', name: 'Checkmate', layout: 'checker', atoms: 5, par: [11, 22], seed: 120 },
+  { id: 'pinch-point', name: 'Pinch point', layout: 'pinch', atoms: 5, par: [12, 17], seed: 124 },
+  { id: 'scattershot', name: 'Scattershot', layout: 'scatter', atoms: 6, par: [15, 24], seed: 123 },
 ];
 
 export const MAX_STARS = PUZZLES.length * 3;
