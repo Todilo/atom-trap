@@ -286,7 +286,7 @@ describe('Arcade rules (ADR-0018)', () => {
   it('ends the chain after a pause, and a break drops it one step', () => {
     const sim = new Simulation(arcade({ chainWindow: 5 }), { atoms: [{ x: 27, y: 10, dx: 1, dy: 1 }] });
     wallAtTen(sim);
-    run(sim, 6);
+    expect(run(sim, 6)).toContainEqual({ type: 'chain-ended', count: 2 });
     expect(sim.chain).toBe(0);
     expect(sim.chainMultiplier).toBe(1);
 

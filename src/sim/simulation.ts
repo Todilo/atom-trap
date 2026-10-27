@@ -44,7 +44,9 @@ export type GameEvent =
   | { type: 'game-over'; reason: 'lives' | 'time' | 'walls' }
   | { type: 'big-catch'; cells: number }
   | { type: 'atom-captured'; x: number; y: number; points: number }
-  | { type: 'chain'; count: number };
+  | { type: 'chain'; count: number }
+  /** The chain ran out of time (not a break, which only costs a step). */
+  | { type: 'chain-ended'; count: number };
 
 export interface SimulationOptions {
   seed?: number;
@@ -179,7 +181,10 @@ export class Simulation {
 
     // The chain only runs down while the player is choosing the next wall, not while one is growing.
     if (this.chain && (this.halves.a || this.halves.b)) this.chainEndsAt++;
-    if (this.chain && this.steps > this.chainEndsAt) this.chain = 0;
+    if (this.chain && this.steps > this.chainEndsAt) {
+      events.push({ type: 'chain-ended', count: this.chain });
+      this.chain = 0;
+    }
     this.applyQueuedWall(events);
     for (const slot of ['a', 'b'] as const) this.advanceHalf(slot, events);
     // Like the original's two phases: every atom decides its bounce on the same positions, then all move.

@@ -27,12 +27,12 @@ Open items picked up along the way, with the milestone they belong to (ADR-0010)
 | Achievements | after v1 | 22 badges across all modes with progress, an unlock notice and an Achievements page (ADR-0019). |
 | 24 puzzles | after v1 | A second twelve on the new layouts, tuned with the bot and ordered by difficulty. |
 | Split main.ts | after v1 | The HUD, records, updates, install, demo, feedback, keys and puzzle log moved into src/shell/. |
+| Portrait turn from the sensors | after v1 | The rotated stage turns whichever way the phone is held sideways (ADR-0013), and a soft buzz marks a chain running out. |
 
 ## Ideas for after v1
 
 | Idea | Notes |
 |---|---|
-| Pick the portrait rotation direction from the device sensors | Today it's always clockwise (ADR-0013). |
 | Arcade: held power-ups | Dropped by captures and big catches, one slot, used when you choose: Freeze, Laser, Bomb, Slow-mo (ADR-0018). |
 | Achievement rewards | New cosmetics (atom styles, themes) that achievements could unlock; today they're badges only (ADR-0019). |
 | Records page | Lifetime stats (best chain, captures, walls, furthest boards) are already kept for achievements. |

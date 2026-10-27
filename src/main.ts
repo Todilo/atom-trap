@@ -15,6 +15,7 @@ import { AudioEngine, type AudioSettings } from './shell/audio';
 import { Demo } from './shell/demo';
 import { ArcadeFeedback, countUp } from './shell/feedback';
 import { Haptics } from './shell/haptics';
+import { watchTurn } from './shell/turn';
 import { Hud } from './shell/hud';
 import { Install } from './shell/install';
 import { listenToKeys } from './shell/keyboard';
@@ -57,6 +58,7 @@ import type { GameEvent, Simulation } from './sim/simulation';
 // Best effort only: browsers allow the orientation lock just in fullscreen / installed mode.
 const orientation = screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> };
 orientation.lock?.('landscape').catch(() => {});
+watchTurn();
 
 const screenEl = document.getElementById('screen')!;
 const host = document.getElementById('app')!;

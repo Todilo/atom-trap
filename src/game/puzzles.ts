@@ -35,7 +35,7 @@ export const PUZZLES: Puzzle[] = [
   { id: 'teeth', name: 'Teeth', layout: 'teeth', atoms: 3, par: [3, 8], seed: 106 },
   { id: 'crossroads', name: 'Crossroads', layout: 'cross', atoms: 3, par: [6, 11], seed: 104 },
   { id: 'diamond', name: 'Diamond', layout: 'diamond', atoms: 3, par: [6, 12], seed: 107 },
-  { id: 'picture-frame', name: 'Picture frame', layout: 'frame', atoms: 3, par: [7, 13], seed: 105 },
+  { id: 'picture-frame', name: 'Picture frame', layout: 'frame', atoms: 3, par: [5, 13], seed: 105 },
   { id: 'busy-crossing', name: 'Busy crossing', layout: 'cross', atoms: 4, par: [8, 13], seed: 109 },
   { id: 'room-service', name: 'Room service', layout: 'rooms', atoms: 4, par: [8, 14], seed: 110 },
   { id: 'crowded-pillars', name: 'Crowded pillars', layout: 'pillars', atoms: 4, par: [9, 15], seed: 108 },

@@ -49,8 +49,9 @@ body {
 }
 
 /*
- * Portrait (for example a browser tab with auto-rotate off): draw the stage turned 90° clockwise,
- * so turning the phone sideways shows it upright (ADR-0013). Input is mapped back in src/game/input.ts.
+ * Portrait (for example a browser tab with auto-rotate off): draw the stage turned 90°, so turning
+ * the phone sideways shows it upright (ADR-0013). Clockwise unless the sensors say the phone's left
+ * edge is up (src/shell/turn.ts). Input is mapped back in src/game/input.ts.
  */
 @media (orientation: portrait) {
   #stage {
@@ -61,6 +62,12 @@ body {
     height: 100dvw;
     transform: rotate(90deg);
     transform-origin: top left;
+  }
+
+  :root[data-turn='left'] #stage {
+    top: 100dvh;
+    left: 0;
+    transform: rotate(-90deg);
   }
 }
 

@@ -17,5 +17,5 @@ ADR-0006 makes the game landscape-only and showed a "rotate your device" screen 
 ## Consequences
 
 - The game is playable in any browser tab, auto-rotate on or off. With auto-rotate on, turning the phone switches to the normal unrotated landscape layout.
-- The rotation is always clockwise. Holding the phone the other way round (top to the right) shows the game upside down. Picking the direction from device-orientation sensors is a possible later refinement.
+- The rotation is clockwise by default. Later the direction was picked from the gravity sensor (`src/shell/turn.ts`): with the phone clearly on its side and its left edge up, the stage turns anticlockwise instead, so it's upright whichever way the phone is held. Without sensor readings (desktops, iOS without motion permission) it stays clockwise.
 - Phone safe-area insets are applied in the unrotated frame, so a notch can overlap the HUD edge in rotated mode. That's acceptable for a fallback.

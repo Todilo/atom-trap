@@ -11,6 +11,7 @@ const PATTERNS: Partial<Record<GameEvent['type'], number | number[]>> = {
   'game-over': 250,
   'atom-captured': [40, 30, 80],
   'big-catch': [25, 25, 60],
+  'chain-ended': [15, 60, 15],
 };
 
 export class Haptics {

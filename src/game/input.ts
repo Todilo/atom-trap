@@ -16,13 +16,24 @@ export function classifySwipe(dx: number, dy: number, threshold = SWIPE_THRESHOL
 
 const portrait = typeof window === 'undefined' ? null : window.matchMedia('(orientation: portrait)');
 
+/** How the stage is drawn turned: not at all, clockwise, or (portrait with the left edge up) anticlockwise. */
+export type Turn = 0 | 90 | -90;
+
+/** The stage's turn now (ADR-0013); src/shell/turn.ts picks the direction from the sensors. */
+export function currentTurn(): Turn {
+  if (!portrait?.matches) return 0;
+  return document.documentElement.dataset.turn === 'left' ? -90 : 90;
+}
+
 /**
- * Screen point → element-local point. In portrait the whole game is drawn turned 90° clockwise
- * (ADR-0013), so the element's x axis runs down the screen and its y axis runs right to left.
+ * Screen point → element-local point. In portrait the whole game is drawn turned 90° (ADR-0013).
+ * Clockwise, the element's x axis runs down the screen and its y axis right to left; anticlockwise,
+ * x runs up the screen and y left to right.
  */
-export function toLocal(clientX: number, clientY: number, rect: { left: number; top: number; right: number }, rotated: boolean): { x: number; y: number } {
-  if (!rotated) return { x: clientX - rect.left, y: clientY - rect.top };
-  return { x: clientY - rect.top, y: rect.right - clientX };
+export function toLocal(clientX: number, clientY: number, rect: { left: number; top: number; right: number; bottom: number }, turn: Turn): { x: number; y: number } {
+  if (turn === 90) return { x: clientY - rect.top, y: rect.right - clientX };
+  if (turn === -90) return { x: rect.bottom - clientY, y: clientX - rect.left };
+  return { x: clientX - rect.left, y: clientY - rect.top };
 }
 
 export interface InputHandlers {
@@ -60,7 +71,7 @@ export class PointerInput {
 
   private local(e: PointerEvent): { x: number; y: number } {
     const r = this.el.getBoundingClientRect();
-    return toLocal(e.clientX, e.clientY, r, portrait?.matches ?? false);
+    return toLocal(e.clientX, e.clientY, r, currentTurn());
   }
 
   private onDown = (e: PointerEvent): void => {
